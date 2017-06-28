@@ -6,7 +6,9 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+import itertools as it
 
+# TODO: not finished
 def calculate_stats(df_data):
     """
     Calculates the mean, standard dev of the sample.
@@ -16,12 +18,11 @@ def calculate_stats(df_data):
 
     Returns:
 
-
     """
     means = df_data.groupby('Genotype').mean()
     #stdev = df_data.groupby('Genotype', as_index=False).std()
 
-    return means.to_dict()
+    return means
 
 
 
@@ -39,7 +40,7 @@ def calculate_means(df_data, geno_counts, bootstraps):
     bootstraps  --- (int) number of bootstraps
 
     Returns:
-    means --- (dictionary) of lists of calculated means
+    means --- (dictionary) of pandas dataframes of means
     """
     # extract data w/o genotype lables
     # column names are the keys to the dictionary
@@ -70,8 +71,16 @@ def plot_bootstraps(boot_deltas, obs_delta):
     """
     """
 
-    sns.distplot(boot_deltas['Fluorescence']['fog-2'])
-    plt.gca().axvline(obs_delta['Fluorescence']['fog-2'])
+    f, axarr = plt.subplots(len(boot_deltas), sharex=True)
+    for i, measurement in enumerate(boot_deltas):
+        legend = []
+        for genotype in boot_deltas[measurement]:
+            sns.distplot(boot_deltas[measurement][genotype],\
+                            ax=axarr[i], label=genotype)
+            legend.append(genotype)
+            # color = axarr[i].gca().get_color()
+            axarr[i].axvline(obs_delta[measurement][genotype])
+        axarr[i].legend()
     plt.show()
 
 def calculate_deltas(means):
@@ -82,20 +91,27 @@ def calculate_deltas(means):
     means --- (dictionary) of means (can be list of means)
 
     Returns:
-    deltas --- (dictionary) of deltas
+    deltas --- (dictionary) of pandas dataframe of deltas
     """
     deltas = {}
     for measurement in means:
-        deltas[measurement] = {}
-        for genotype in means[measurement]:
-            if genotype == 'WT':
-                continue
+        genotypes = means[measurement].keys()
 
-            deltas[measurement][genotype] =\
-                    means[measurement]['WT']\
-                    - means[measurement][genotype]
+        # make empty dataframe
+        matrix = make_empty_dataframe(len(genotypes),\
+                len(genotypes), genotypes, genotypes)
+
+        # iterate through each pairwise combination
+        for pair in it.combinations(genotypes, 2):
+            delta = means[measurement][pair[0]]\
+                    - means[measurement][pair[1]]
+            matrix[pair[0]][pair[1]] = delta
+
+        # assign matrix to hash
+        deltas[measurement] = matrix
 
     return deltas
+
 
 def calculate_pvalues(boot_deltas, obs_deltas, bootstraps):
     """
@@ -106,59 +122,108 @@ def calculate_pvalues(boot_deltas, obs_deltas, bootstraps):
     obs_deltas  --- (dictionary) of observed deltas
 
     Returns:
-    pvalues --- (dictionary) of pvalues for each measurement
-                            and mutant
+    pvalues --- (dictionary) of pandas dataframes of p values                          and mutant
     """
     # initialize hash
     pvalues = {}
     for measurement in obs_deltas:
-        pvalues[measurement] = {}
-        for genotype in obs_deltas[measurement]:
+        genotypes = obs_deltas[measurement].keys()
+
+        # make empty dataframe
+        matrix = make_empty_dataframe(len(genotypes),\
+                    len(genotypes), genotypes, genotypes)
+
+        # iterate through each pairwise combination
+        for pair in it.combinations(genotypes, 2):
             # assign short variables for simple code
-            delta = obs_deltas[measurement][genotype]
-            delta_array = boot_deltas[measurement][genotype]
-            print(delta)
-            print(delta_array)
+            delta = obs_deltas[measurement][pair[0]][pair[1]]
+            boot_delta_array = boot_deltas[measurement]\
+                                [pair[0]][pair[1]]
 
             # sorted array to check if delta lies in the range
             # of bootstrapped deltas
-            sorted_array = np.sort(delta_array)
+            sorted_array = np.sort(boot_delta_array)
 
             # if observed delta lies outside, p-value can not be
             # directly computed.
             # can only say p-value < 1/bootstraps
             if delta < sorted_array[0] or delta > sorted_array[-1]:
-                pvalues[measurement][genotype] = '<' +\
-                                                    str(1/bootstraps)
-                print('P-value for ' + genotype + ' could not be \
-                        accurately calculated.')
+                matrix[pair[0]][pair[1]] = '<' + str(1/bootstraps)
+                print('P-value for ' + measurement + ' ' + pair[0] + ' vs '\
+                            + pair[1] + ' could not be accurately calculated.')
             else:
                 # number of points to the right of observed delta
                 if delta > 0:
-                    length = len(delta_array[delta_array >= delta])
-                    total_length = len(delta_array)
+                    length = len(boot_delta_array[boot_delta_array\
+                                    >= delta])
+                    total_length = len(boot_delta_array)
                     pvalue = length / total_length
-                    pvalues[measurement][genotype] = pvalue
+                    matrix[pair[0]][pair[1]] = pvalue
                 elif delta < 0:
-                    length = len(delta_array[delta_array <= delta])
-                    total_length = len(delta_array)
+                    length = len(boot_delta_array[boot_delta_array\
+                                    <= delta])
+                    total_length = len(boot_delta_array)
                     pvalue = length / total_length
-                    pvalues[measurement][genotype] = pvalue
+                    matrix[pair[0]][pair[1]] = pvalue
 
-    print(pvalues)
+        # assign matrix to hash
+        pvalues[measurement] = matrix
     return pvalues
 
+def make_empty_dataframe(rows, cols, row_labels, col_labels):
+    """
+    Creates an empty dataframe with specified dimensions and
+    labels.
 
+    Params:
+    rows       --- (int) # of rows
+    cols       --- (int) # of columns
+    row_labels --- (list) of row labels
+    col_labels --- (list) of column labels
+
+    Returns:
+    matrix --- (pandas.DataFrame) wanted matrix
+    """
+    # make rows x cols zero dataframe
+    matrix = pd.DataFrame(np.zeros((rows, cols)),\
+                            dtype='object')
+    # set column and row indices
+    matrix.columns = list(col_labels)
+    matrix = matrix.reindex(list(row_labels))
+
+    return matrix
+
+# TODO: work in progress...
+def plot_pvalue_heatmaps(pvalues, threshold):
+    """
+    Plots the pvalues in separate heatmaps. (for each measurement)
+
+    Params:
+    pvalues   --- (dictionary) of pandas dataframes of p values
+    threshold --- (float) of p value threshold
+
+    Returns:
+
+    """
+    pvalues['exp3'].fillna(0, inplace=True)
+    print(pvalues['exp3'])
+    array = pvalues['exp3'].values.astype(float)
+    print(len(array))
+    mask = np.in1d(array, 0).reshape(array.shape)
+    ax = sns.heatmap(pvalues['exp3'], cmap='GnBu_r', mask=mask)
+    ax.invert_xaxis()
+    plt.show()
 
 
 if __name__ == '__main__':
     import argparse
 
     bootstraps = 100
+    qval = 0.05
 
     parser = argparse.ArgumentParser(description='Run data anlysis \
                                         and plot boxplot.')
-    # begin command line ArgumentParser
+    # begin command line arguments
     parser.add_argument('csv_data',
                         help='The full path to the csv data file.',
                         type=str)
@@ -171,18 +236,22 @@ if __name__ == '__main__':
                         (default: {0})'.format(bootstraps),
                         type=int,
                         default=100)
+    parser.add_argument('-q',
+                        help='Q value threshold for significance.\
+                        (default: {0})'.format(qval),
+                        type=float,
+                        default=0.05)
     # end command line arguments
     args = parser.parse_args()
 
     csv_path = args.csv_data
     title = args.title
     bootstraps = args.b
+    qval = args.q
 
     df_data = pd.read_csv(csv_path) # read csv data
-    print(df_data)
 
     genotypes = np.unique(df_data['Genotype']) # get unique genotypes
-    print(genotypes)
 
     # begin counting samples
     geno_counts = {}
@@ -191,33 +260,25 @@ if __name__ == '__main__':
     # end counting samples
 
     measurements = df_data.keys()[1:]
-    print(measurements)
 
     # calculate means
     obs_mean = calculate_stats(df_data) # obs_dev
     boot_means = calculate_means(df_data, geno_counts, bootstraps)
-    print(boot_means)
 
     # calculate deltas
     obs_deltas = calculate_deltas(obs_mean)
     boot_deltas = calculate_deltas(boot_means)
 
-    print()
-    print(boot_deltas)
-    print()
     print(obs_deltas)
+    print(boot_deltas)
+
+    print(obs_deltas.keys())
 
     # calculate pvalues
     pvalues = calculate_pvalues(boot_deltas, obs_deltas, bootstraps)
 
+    # plot pvalues
+    plot_pvalue_heatmaps(pvalues, 0.05)
 
 
-    #plot_bootstraps(boot_deltas, obs_deltas)
-
-
-    #################
-    # wt_mean = df_data[df_data.Genotype == 'WT']['Fluorescence'].mean()
-    # mt_mean = df_data[df_data.Genotype == 'fog-2']['Fluorescence'].mean()
-    # original_delta = mt_mean - wt_mean
-
-    #plot_bootstraps(means, original_delta)
+    # plot_bootstraps(boot_deltas, obs_deltas)
