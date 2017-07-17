@@ -8,6 +8,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import itertools as it
 import matplotlib
+import numba
 
 # TODO: not finished
 def calculate_stats(df_data):
@@ -25,6 +26,47 @@ def calculate_stats(df_data):
 
     return means
 
+
+@numba.jit(nopython=True)
+def bootstrap_difference_of_means(x, y, n=10**4):
+    """Given two datasets, return a pvalue.
+
+    params:
+    x, y --- datasets
+    n ---number of iterations
+
+    output:
+    delta -- a 1d array of length `n'
+    """
+    # get lengths
+    nx = len(x)
+    ny = len(y)
+
+    # make a null dataset
+    mixed = np.zeros(nx + ny)
+    mixed[0:nx] = x
+    mixed[nx:] = y
+
+    # initialize a delta vector to store everything in
+    delta = np.zeros(n)
+
+    # go through the bootstrap
+    # TODO: I'm fairly sure code below can be vectorized
+
+    # for each n
+    for i in np.arange(n):
+        # make new datasets that respect the null hypothesis that
+        # mean(x) == mean(y) on average
+        nullx = np.random.choice(mixed, nx, replace=True)
+        nully = np.random.choice(mixed, ny, replace=True)
+
+        # calculate the difference of their means
+        diff = nully.mean() - nullx.mean()
+
+        # store
+        delta[i] = diff
+
+    return delta
 
 
 def calculate_means(df_data, geno_counts, bootstraps):
@@ -84,34 +126,34 @@ def plot_bootstraps(boot_deltas, obs_delta):
         axarr[i].legend()
     plt.show()
 
-def calculate_deltas(means):
-    """
-    Calculates the deltas of means.
-
-    Params:
-    means --- (dictionary) of means (can be list of means)
-
-    Returns:
-    deltas --- (dictionary) of pandas dataframe of deltas
-    """
-    deltas = {}
-    for measurement in means:
-        genotypes = means[measurement].keys()
-
-        # make empty dataframe
-        matrix = make_empty_dataframe(len(genotypes),\
-                len(genotypes), genotypes, genotypes)
-
-        # iterate through each pairwise combination
-        for pair in it.combinations(genotypes, 2):
-            delta = means[measurement][pair[0]]\
-                    - means[measurement][pair[1]]
-            matrix[pair[0]][pair[1]] = delta
-
-        # assign matrix to hash
-        deltas[measurement] = matrix
-
-    return deltas
+# def calculate_deltas(means):
+#     """
+#     Calculates the deltas of means.
+#
+#     Params:
+#     means --- (dictionary) of means (can be list of means)
+#
+#     Returns:
+#     deltas --- (dictionary) of pandas dataframe of deltas
+#     """
+#     deltas = {}
+#     for measurement in means:
+#         genotypes = means[measurement].keys()
+#
+#         # make empty dataframe
+#         matrix = make_empty_dataframe(len(genotypes),\
+#                 len(genotypes), genotypes, genotypes)
+#
+#         # iterate through each pairwise combination
+#         for pair in it.combinations(genotypes, 2):
+#             delta = means[measurement][pair[0]]\
+#                     - means[measurement][pair[1]]
+#             matrix[pair[0]][pair[1]] = delta
+#
+#         # assign matrix to hash
+#         deltas[measurement] = matrix
+#
+#    return deltas
 
 
 def calculate_pvalues(boot_deltas, obs_deltas, bootstraps):
