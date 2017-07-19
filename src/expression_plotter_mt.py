@@ -11,9 +11,8 @@ import matplotlib
 import numba
 import threading
 import queue
-import sys # for debugging purposes
 
-# TODO: not finished
+# TODO: no longer needed
 def calculate_stats(df_data):
     """
     Calculates the mean, standard dev of the sample.
@@ -29,13 +28,14 @@ def calculate_stats(df_data):
 
     return means
 
-@numba.jit(nopython=True, nogil=True)
-def bootstrap_deltas(x, y, bootstraps):
+def bootstrap_deltas(x, y, n, f=np.mean):
     """Given two datasets, return bootstrapped means.
     Params:
-    x, y --- datasets
-    n ---number of iterations
-    Output:
+    x, y --- (list-like) datasets
+    n    --- (int) # of bootstraps
+    f    --- (function) to calculate deltas
+
+    Returns:
     delta -- a 1d array of length `n'
     """
     # get lengths
@@ -47,44 +47,62 @@ def bootstrap_deltas(x, y, bootstraps):
     mixed[0:nx] = x
     mixed[nx:] = y
 
-    # initialize a delta vector to store everything in
-    delta = np.zeros(bootstraps)
+    # function to be numbaized --- bcs function that takes functions as
+    # arguments can not be numbaized yet
+    @numba.jit(nopython=True, nogil=True)
+    def difference(x, y, n):
+        """
+        Calculates difference based on function f.
+        """
+        # initialize a delta vector to store everything in
+        delta = np.zeros(n)
 
-    # go through the bootstrap
-    # TODO: I'm fairly sure code below can be vectorized
+        # go through the bootstrap
+        # TODO: I'm fairly sure code below can be vectorized
 
-    # for each n
-    for i in np.arange(bootstraps):
-        # make new datasets that respect the null hypothesis that
-        # mean(x) == mean(y) on average
-        nullx = np.random.choice(mixed, nx, replace=True)
-        nully = np.random.choice(mixed, ny, replace=True)
+        # for each n
+        for i in np.arange(n):
+            # make new datasets that respect the null hypothesis that
+            # mean(x) == mean(y) on average
+            nullx = np.random.choice(mixed, nx, replace=True)
+            nully = np.random.choice(mixed, ny, replace=True)
 
-        # calculate the difference of their means
-        diff = nully.mean() - nullx.mean()
+            # calculate the difference of their means
+            diff = f(nully) - f(nullx)
 
-        # store
-        delta[i] = diff
+            # store
+            delta[i] = diff
+
+        return delta
+
+    delta = difference(x, y, n)
 
     return delta
 
-def calculate_pairwise_pvalues(matrix, bootstraps):
+def calculate_pairwise_pvalues(df, by, which, n, f=np.mean):
     """
     Calculates the p values of each pairwise comparison.
     This function calls calculate_delta() and calculate_pvalue()
 
     Params:
-    matrix     --- (pandas.DataFrame) data read from csv
-    bootstraps --- (int) # of bootstraps
+    df    --- (pandas.DataFrame) data read from csv
+    which --- (str) which column to perform comparison
+    by    --- (String) label to group by (default: Genotype)
+    n     --- (int) # of bootstraps
+    f     --- (function) to calculate deltas
 
     Returns:
     p_vals --- (pandas.DataFrame) of pairwise p values
     """
 
+    df = df.set_index(by) # set genotype as index
+    df = df.astype(float)
+    print(df)
+
     # set_index('Genotype') must have already been done to matrix
     # matrix is a n x 2 matrix, column 1 for genotypes
     # and column 2 for measurments
-    matrix = matrix.groupby('Genotype').unique()
+    matrix = df.groupby(by)[which].unique()
     # now, matrix has been reduced to list of unique genotypes
 
     genotypes = matrix.keys() # list of all genotypes
@@ -108,7 +126,7 @@ def calculate_pairwise_pvalues(matrix, bootstraps):
                                                 #bootstraps)
 
         thread = threading.Thread(target=calculate_delta_queue,\
-                                args=(matrix, pair[0], pair[1], bootstraps, qu))
+                                args=(matrix, pair[0], pair[1], n, qu))
         threads.append(thread)
         pairs.append(pair)
 
@@ -137,7 +155,7 @@ def calculate_pairwise_pvalues(matrix, bootstraps):
 
     return p_vals
 
-def calculate_delta_queue(matrix, gene_1, gene_2, bootstraps, queue):
+def calculate_delta_queue(matrix, gene_1, gene_2, n, queue, f=np.mean):
     """
     Function to calculate deltas with multithreading.
     Saves p values as tuples in queue.
@@ -145,33 +163,37 @@ def calculate_delta_queue(matrix, gene_1, gene_2, bootstraps, queue):
     Params:
     matrix         --- (pandas.DataFrame) data read from csv
     gene_1, gene_2 --- (String) genotypes to be compared
-    bootstraps     --- (int) # of bootstraps
+    n              --- (int) # of bootstraps
     queue          --- (queue.Queue) queue to save results
+    f              --- (function) to calculate deltas
+
+    Returns: none
     """
     delta_obs, deltas_bootstrapped = calculate_delta(matrix[gene_1],\
-                                                    matrix[gene_2], bootstraps)
+                                                    matrix[gene_2], n)
 
     queue.put((gene_1, gene_2, delta_obs, deltas_bootstrapped))
 
-@numba.jit(nopython=True, nogil=True)
-def calculate_delta(x, y, bootstraps):
+def calculate_delta(x, y, n, f=np.mean):
     """
     Calculates the observed and bootstrapped deltas.
     This function calls bootstrap_deltas()
 
     Params:
-    x, y       --- (list-like) observed values/measurements
-    bootstraps --- (int) # of bootstraps
+    x, y --- (list-like) observed values/measurements
+    n    --- (int) # of bootstraps
+    f    --- (function) to calculate deltas
 
     Returns:
     delta_obs           --- (float) observed delta
     deltas_bootstrapped --- (numpy.array) of bootstrapped deltas
     """
     delta_obs = y.mean() - x.mean()
-    deltas_bootstrapped = bootstrap_deltas(x, y, bootstraps)
+    deltas_bootstrapped = bootstrap_deltas(x, y, n, f)
 
     return delta_obs, deltas_bootstrapped
 
+@numba.jit(nopython=True)
 def calculate_pvalue(delta, delta_array):
     """
     Calculates the pvalue of one observation.
@@ -417,7 +439,7 @@ def plot_qvalue_heatmaps(q_vals, threshold, bootstraps, figure, **kwargs):
 
     # draw heatmap and apply mask
     ax = sns.heatmap(values, cmap='magma', mask=mask, vmin=vmin, vmax=vmax,\
-                        cbar_kws={'label':r'$-\log_{10}$'})
+                        cbar_kws={'label':r'$-\log_{10}(q)$'})
     ax_mask = sns.heatmap(values.fillna(0),\
                             cmap=matplotlib.colors.ListedColormap(['white']),\
                             mask=~mask_nan, cbar=False)
@@ -477,7 +499,7 @@ def calculate_qvalues(p_vals):
 
     return q_vals
 
-
+@numba.jit(nopython=True)
 def benjamin_hochberg_stepup(p_vals):
     """
     Given a list of p-values, apply FDR correction and return the q values.
@@ -516,7 +538,7 @@ def benjamin_hochberg_stepup(p_vals):
 if __name__ == '__main__':
     import argparse
 
-    bootstraps = 100
+    n = 100
     qval = 0.05
 
     parser = argparse.ArgumentParser(description='Run data anlysis \
@@ -531,25 +553,32 @@ if __name__ == '__main__':
                         type=str)
     parser.add_argument('-b',
                         help='Number of bootstraps to perform. \
-                        (default: {0})'.format(bootstraps),
+                        (default: {0})'.format(n),
                         type=int,
                         default=100)
     parser.add_argument('-q',
-                        help='Q value threshold for significance.\
+                        help='Q value threshold for significance. \
                         (default: {0})'.format(qval),
                         type=float,
                         default=0.05)
+    parser.add_argument('-i',
+                        help='Label to group measurements by. \
+                        (defaults to first element of the csv file)',
+                        type=str,
+                        default=None)
     # end command line arguments
     args = parser.parse_args()
 
     csv_path = args.csv_data
     title = args.title
-    bootstraps = args.b
+    n = args.b
     threshold = args.q
+    by = args.i
 
-    df_data = pd.read_csv(csv_path) # read csv data
-    matrix = df_data.set_index('Genotype') # set genotype as index
-    matrix = matrix.astype(float)
+    df = pd.read_csv(csv_path) # read csv data
+
+    if by == None:
+        by = df.keys()[0]
 
     # 7/18/2017 replaced
     # genotypes = np.unique(df_data['Genotype']) # get unique genotypes
@@ -571,9 +600,13 @@ if __name__ == '__main__':
     #
     # print(obs_deltas.keys())
 
-    for measurement in matrix:
+    for measurement in df:
+        # don't check same column as group by
+        if measurement == by:
+            continue
+
         # calculate pvalues
-        p_vals = calculate_pairwise_pvalues(matrix[measurement], bootstraps)
+        p_vals = calculate_pairwise_pvalues(df, by, measurement, n, f=np.mean)
         p_vals = p_vals.astype(float)
         print(p_vals)
 
@@ -582,7 +615,7 @@ if __name__ == '__main__':
         print(q_vals)
         #
         # plot qvalues
-        plot_qvalue_heatmaps(q_vals, threshold, bootstraps, measurement, title=title)
+        plot_qvalue_heatmaps(q_vals, threshold, n, measurement, title=title)
         #
         # # plot boxplot
         # plot_boxplot(df_data, threshold, title=title)
