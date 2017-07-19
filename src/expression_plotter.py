@@ -10,7 +10,8 @@ import itertools as it
 import matplotlib
 import numba
 import threading
-import Queue
+import queue
+import sys # for debugging purposes
 
 # TODO: not finished
 def calculate_stats(df_data):
@@ -28,7 +29,7 @@ def calculate_stats(df_data):
 
     return means
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, nogil=True)
 def bootstrap_deltas(x, y, bootstraps):
     """Given two datasets, return bootstrapped means.
     Params:
@@ -95,14 +96,14 @@ def calculate_pairwise_pvalues(matrix, bootstraps):
     p_vals = make_empty_dataframe(len(genotypes),\
             len(genotypes), genotypes, genotypes) # empty pandas dataframe
 
-    pairs = []
+    # pairs = []
     # TODO: make thread list inside for loop & start them there
     # for loop to iterate through all pairwise comparisons (not permutation)
     for pair in it.combinations(genotypes, 2):
         # observed delta & bootstrapped deltas
-        # delta, delta_array = calculate_delta(matrix[pair[0]], matrix[pair[1]],\
-                                                #bootstraps)
-        pairs.append(pair)
+        delta, delta_array = calculate_delta(matrix[pair[0]], matrix[pair[1]],\
+                                                bootstraps)
+        # pairs.append(pair)
 
         # assign to dataframe
         # TODO: is this assignment necessary? is it needed later?
@@ -112,21 +113,25 @@ def calculate_pairwise_pvalues(matrix, bootstraps):
         # calculate p value
         p_vals[pair[0]][pair[1]] = calculate_pvalue(delta, delta_array)
 
-    queue = Queue.Queue()
-    threads = [threading.Thread(target=calculate_delta, args=(matrix[pair[0]],\
-                                    matrix[pair[1]], bootstraps)) for pair in pairs]
+    # qu = queue.Queue()
+    # threads = [threading.Thread(target=calculate_delta, args=(matrix[pair[0]],\
+    #                                 matrix[pair[1]], bootstraps, qu)) for pair in pairs]
+    #
+    # for thread in threads:
+    #     print('Starting thread ' + str(thread))
+    #     thread.start()
+    # for thread, pair in zip(threads, pairs):
+    #     thread.join()
+    #     print('Thread ' + str(thread) + ' completed.')
 
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    for i in range(queue.qsize()):
-        delta, delta_array = queue.get()
+
+    # for i, pair in zip(range(qu.qsize()), pairs):
+    #     delta, delta_array = qu.get()
+    #     p_vals[pair[0]][pair[1]] = calculate_pvalue(delta, delta_array)
 
     return p_vals
 
-@numba.jit(nopython=True)
-def calculate_delta(x, y, bootstraps, queue):
+def calculate_delta(x, y, bootstraps):
     """
     Calculates the observed and bootstrapped deltas.
     This function calls bootstrap_deltas()
@@ -141,7 +146,10 @@ def calculate_delta(x, y, bootstraps, queue):
     """
     delta_obs = y.mean() - x.mean()
     deltas_bootstrapped = bootstrap_deltas(x, y, bootstraps)
-    queue.put((delta_obs, deltas_bootstrapped))
+
+    # queue.put((delta_obs, deltas_bootstrapped))
+
+    return delta_obs, deltas_bootstrapped
 
 def calculate_pvalue(delta, delta_array):
     """
