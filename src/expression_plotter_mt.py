@@ -78,7 +78,6 @@ def calculate_pairwise_pvalues(df, by, which, n, f=np.mean):
 
     df = df.set_index(by) # set genotype as index
     df = df.astype(float)
-    print(df)
 
     # set_index('Genotype') must have already been done to matrix
     # matrix is a n x 2 matrix, column 1 for genotypes
@@ -101,6 +100,7 @@ def calculate_pairwise_pvalues(df, by, which, n, f=np.mean):
     qu = queue.Queue()
 
     # for loop to iterate through all pairwise comparisons (not permutation)
+    print('#Starting threads for bootstrapping...')
     for pair in it.combinations(genotypes, 2):
         # observed delta & bootstrapped deltas
         # delta, delta_array = calculate_delta(matrix[pair[0]], matrix[pair[1]],\
@@ -111,7 +111,6 @@ def calculate_pairwise_pvalues(df, by, which, n, f=np.mean):
         threads.append(thread)
         pairs.append(pair)
 
-        print('Starting ' + str(thread))
         thread.setDaemon(True)
         thread.start()
 
@@ -133,6 +132,11 @@ def calculate_pairwise_pvalues(df, by, which, n, f=np.mean):
     for thread in threads:
         gene_1, gene_2, delta_obs, deltas_bootstrapped = qu.get()
         p_vals[gene_1][gene_2] = calculate_pvalue(delta_obs, deltas_bootstrapped)
+
+    print('#Bootstrapping of {} threads complete.'.format(len(threads)))
+
+    print('\n#P-value matrix:')
+    print(p_vals)
 
     return p_vals
 
@@ -263,6 +267,9 @@ def calculate_qvalues(p_vals):
     # construct pandas dataframe from data and labels
     q_vals = pd.DataFrame(data=q_vals, index=labels, columns=labels)
 
+    print('\n#Q-value matrix:')
+    print(q_vals)
+
     return q_vals
 
 @numba.jit(nopython=True)
@@ -374,11 +381,9 @@ if __name__ == '__main__':
         # calculate pvalues
         p_vals = calculate_pairwise_pvalues(df, by, measurement, n, f=np.mean)
         p_vals = p_vals.astype(float)
-        print(p_vals)
 
         # calculate q_values
         q_vals = calculate_qvalues(p_vals)
-        print(q_vals)
         #
         # plot qvalues
         plot_qvalue_heatmaps(q_vals, threshold, n, measurement, title=title)
