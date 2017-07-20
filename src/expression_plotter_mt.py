@@ -4,29 +4,10 @@
 
 import pandas as pd
 import numpy as np
-import seaborn as sns; sns.set(font_scale=1.5, font='Arial')
-import matplotlib.pyplot as plt
 import itertools as it
-import matplotlib
 import numba
 import threading
 import queue
-
-# TODO: no longer needed
-def calculate_stats(df_data):
-    """
-    Calculates the mean, standard dev of the sample.
-
-    Params:
-    df_data --- (pandas.DataFrame) data read from csv
-
-    Returns:
-
-    """
-    means = df_data.groupby('Genotype').mean()
-    #stdev = df_data.groupby('Genotype', as_index=False).std()
-
-    return means
 
 def bootstrap_deltas(x, y, n, f=np.mean):
     """Given two datasets, return bootstrapped means.
@@ -118,7 +99,7 @@ def calculate_pairwise_pvalues(df, by, which, n, f=np.mean):
     pairs = []
     threads = []
     qu = queue.Queue()
-    # TODO: make thread list inside for loop & start them there
+
     # for loop to iterate through all pairwise comparisons (not permutation)
     for pair in it.combinations(genotypes, 2):
         # observed delta & bootstrapped deltas
@@ -230,153 +211,6 @@ def calculate_pvalue(delta, delta_array):
 
     return p
 
-# TODO: no longer needed
-def calculate_means(df_data, geno_counts, bootstraps):
-    """
-    Calculates the means of each measurement.
-    Each array in data is randomly sampled equal amount of times
-    as specified in the genotype geno_counts hash.
-    Returns dictionary of bootstrapped means with measurements as
-    keys.
-
-    Params:
-    data        --- (pandas.DataFrame) data read from csv
-    geno_counts --- (dictionary) of number of genotypes
-    bootstraps  --- (int) number of bootstraps
-
-    Returns:
-    means --- (dictionary) of pandas dataframes of means
-    """
-    # extract data w/o genotype lables
-    # column names are the keys to the dictionary
-    matrix = df_data[df_data.columns[1:]].to_dict(orient='series')
-
-    # initialize hash
-    means = {}
-    for measurement in matrix:
-        means[measurement] = {}
-        for genotype in geno_counts:
-            means[measurement][genotype] = np.zeros(bootstraps)
-
-    # calculate bootstraps
-    for i in range(bootstraps):
-        for measurement in matrix:
-            for genotype in geno_counts:
-                count = geno_counts[genotype]
-                # sample with replacement the number of genotypes
-                sample = matrix[measurement].sample(count,
-                                                    replace=True)
-                mean = sample.mean()
-                means[measurement][genotype][i] = mean
-
-    return means
-
-# TODO: no longer needed
-def plot_bootstraps(boot_deltas, obs_delta):
-    """
-    """
-
-    f, axarr = plt.subplots(len(boot_deltas), sharex=True)
-    for i, measurement in enumerate(boot_deltas):
-        legend = []
-        for genotype in boot_deltas[measurement]:
-            sns.distplot(boot_deltas[measurement][genotype],\
-                            ax=axarr[i], label=genotype)
-            legend.append(genotype)
-            # color = axarr[i].gca().get_color()
-            axarr[i].axvline(obs_delta[measurement][genotype])
-        axarr[i].legend()
-    plt.show()
-
-# TODO: no longer needed
-def calculate_deltas(means):
-    """
-    Calculates the deltas of means.
-
-    Params:
-    means --- (dictionary) of means (can be list of means)
-
-    Returns:
-    deltas --- (dictionary) of pandas dataframe of deltas
-    """
-    deltas = {}
-    for measurement in means:
-        genotypes = means[measurement].keys()
-
-        # make empty dataframe
-        matrix = make_empty_dataframe(len(genotypes),\
-                len(genotypes), genotypes, genotypes)
-
-        # iterate through each pairwise combination
-        for pair in it.combinations(genotypes, 2):
-            delta = means[measurement][pair[0]]\
-                    - means[measurement][pair[1]]
-            matrix[pair[0]][pair[1]] = delta
-
-        # assign matrix to hash
-        deltas[measurement] = matrix
-
-    return deltas
-
-# TODO: no longer needed
-def calculate_pvalues(boot_deltas, obs_deltas, bootstraps):
-    """
-    Calculates p values given the bootstrapped and observed deltas.
-
-    Params:
-    boot_deltas --- (dictionary) of bootstrapped deltas
-    obs_deltas  --- (dictionary) of observed deltas
-
-    Returns:
-    pvalues --- (dictionary) of pandas dataframes of p values
-    """
-    # initialize hash
-    pvalues = {}
-    for measurement in obs_deltas:
-        genotypes = obs_deltas[measurement].keys()
-
-        # make empty dataframe
-        matrix = make_empty_dataframe(len(genotypes),\
-                    len(genotypes), genotypes, genotypes)
-
-        # iterate through each pairwise combination
-        for pair in it.combinations(genotypes, 2):
-            # assign short variables for simple code
-            delta = obs_deltas[measurement][pair[0]][pair[1]]
-            boot_delta_array = boot_deltas[measurement]\
-                                [pair[0]][pair[1]]
-
-            # sorted array to check if delta lies in the range
-            # of bootstrapped deltas
-            sorted_array = np.sort(boot_delta_array)
-
-            # if observed delta lies outside, p-value can not be
-            # directly computed.
-            # can only say p-value < 1/bootstraps
-            if delta < sorted_array[0] or delta > sorted_array[-1]:
-                matrix[pair[0]][pair[1]] = 0.0
-                print('P-value for ' + measurement + ' ' + pair[0] + ' vs '\
-                            + pair[1] + ' could not be accurately calculated.')
-            else:
-                # number of points to the right of observed delta
-                if delta > 0:
-                    length = len(boot_delta_array[boot_delta_array\
-                                    >= delta])
-                    total_length = len(boot_delta_array)
-                    pvalue = length / total_length
-                    matrix[pair[0]][pair[1]] = pvalue
-                elif delta < 0:
-                    length = len(boot_delta_array[boot_delta_array\
-                                    <= delta])
-                    total_length = len(boot_delta_array)
-                    pvalue = length / total_length
-                    matrix[pair[0]][pair[1]] = pvalue
-
-        # assign matrix to hash
-        matrix = matrix.astype(float)
-        pvalues[measurement] = matrix
-    return pvalues
-
 def make_empty_dataframe(rows, cols, row_labels, col_labels):
     """
     Creates an empty dataframe with specified dimensions and
@@ -399,74 +233,6 @@ def make_empty_dataframe(rows, cols, row_labels, col_labels):
     matrix = matrix.reindex(list(row_labels))
 
     return matrix
-
-# TODO: work in progress...
-def plot_qvalue_heatmaps(q_vals, threshold, bootstraps, figure, **kwargs):
-    """
-    Plots the p values in separate heatmaps. (for each measurement)
-
-    Params:
-    q_vals     --- (pandas.DataFrame) of q values
-    threshold  --- (float) of q value threshold
-    bootstraps --- (int) # of bootstraps
-    figure     --- (String) figure title (default: measurment)
-
-    Returns:
-
-    """
-    # title to be appended to filename
-    title = kwargs.pop('title', '')
-
-    # drop rows and columns with only nans
-    q_vals = q_vals.dropna(how='all', axis=0)
-    q_vals = q_vals.dropna(how='all', axis=1)
-
-    # create mask for insiginificant & nan values
-    array = q_vals.values.astype(float)
-    mask = np.nan_to_num(array) > threshold
-    mask_nan = np.isnan(array)
-
-    # switch to current figure
-    fig = plt.figure(figure)
-
-    # convert values to reciprocal log
-    values = q_vals.replace(0.0, 1/bootstraps)
-    values = -values.apply(np.log10)
-    vmax = -np.log10(1/bootstraps)
-    vmin = -np.log10(threshold)
-    print(values)
-
-
-    # draw heatmap and apply mask
-    ax = sns.heatmap(values, cmap='magma', mask=mask, vmin=vmin, vmax=vmax,\
-                        cbar_kws={'label':r'$-\log_{10}(q)$'})
-    ax_mask = sns.heatmap(values.fillna(0),\
-                            cmap=matplotlib.colors.ListedColormap(['white']),\
-                            mask=~mask_nan, cbar=False)
-
-    # figure settings
-    hfont = {'fontname': 'Pragmatica Light'}
-    ax.xaxis.tick_top()
-    ax.invert_yaxis()
-
-    fig.suptitle(figure, y=1.05, fontsize=20, fontname='Arial')
-    ax.set_ylabel('Genotypes', x=1.05, fontsize=16, fontname='Arial')
-    plt.yticks(rotation='horizontal', fontsize=14, fontname='Arial')
-    plt.xticks(rotation=45, fontsize=14, fontname='Arial')
-
-
-
-    plt.plot()
-    plt.savefig(title + '_' + measurement + '.png', dpi=300, bbox_inches='tight')
-
-# TODO: work i progress...
-def plot_boxplot(data, threshold, **kwargs):
-    """
-    """
-    # data = data.groupby('Genotype')
-    # plt.figure(10)
-    # ax = sns.boxplot(data['exp1'])
-    # plt.show()
 
 def calculate_qvalues(p_vals):
     """
