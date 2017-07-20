@@ -1,5 +1,5 @@
 """
-
+TODO: simplify & organize code -- use **kwargs for functions with multiple args
 """
 
 import numpy as np
@@ -33,7 +33,7 @@ mpl.rcParams['ytick.labelsize'] = 16
 mpl.rcParams['legend.fontsize'] = 14
 
 
-def plot_qvalue_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
+def plot_qvalue_heatmap(df, by, which, threshold, n, f=np.mean, save=False, **kwargs):
     """
     Plots heatmap of q values. Saves graph.
 
@@ -44,6 +44,7 @@ def plot_qvalue_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     threshold --- (float) q value threshold
     n         --- (int) # of bootstraps
     f=np.mean --- (function) to calculate deltas
+    save      --- (boolean) save matrix to csv (default: False)
 
     kwargs:
     title  --- (str) plot title
@@ -64,9 +65,9 @@ def plot_qvalue_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
         q_vals = kwargs.pop('q_vals')
     elif 'p_vals' in kwargs:
         p_vals = kwargs.pop('p_vals')
-        q_vals = mt.calculate_qvalues(p_vals)
+        q_vals = mt.calculate_qvalues(p_vals, save=save, title='{}_{}'.format(title, which))
     else:
-        p_vals = mt.calculate_pairwise_pvalues(df, by, which, n, f)
+        p_vals = mt.calculate_pairwise_pvalues(df, by, which, n, f, save=save, title=title)
 
     ################################
     # begin plotting
@@ -106,7 +107,7 @@ def plot_qvalue_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     plt.yticks(rotation='horizontal')
     plt.xticks(rotation=45)
 
-    plt.plot()
+    print('#Plotting heatmap')
     plt.savefig(title + '_' + which + '_heatmap.png', dpi=300, bbox_inches='tight')
     #
     # end plotting
@@ -114,17 +115,19 @@ def plot_qvalue_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
 
 # TODO: work in progress...
 # TODO: does the boxplot have to use q values too?
-def plot_boxplot(df, by, which, threshold, n, f=np.mean, **kwargs):
+def plot_boxplot(df, control, by, which, threshold, n, f=np.mean, save=False, **kwargs):
     """
     Plot a boxplot.
 
     Params:
     df        --- (pandas.DataFrame) data read from csv
+    control   --- (str) control
     by        --- (str) index to group by
     which     --- (str) column to perform analysis
     threshold --- (float) p value threshold
     n         --- (int) # of bootstraps
     f         --- (function) to calculate delta (default: np.median)
+    save      --- (boolean) save matrix to csv (default: False)
 
     kwargs:
     title  --- (str) plot title
@@ -140,7 +143,7 @@ def plot_boxplot(df, by, which, threshold, n, f=np.mean, **kwargs):
     if 'p_vals' in kwargs:
         p_vals = kwargs.pop('p_vals')
     else:
-        p_vals = mt.calculate_pairwise_pvalues(df, by, which, n, f)
+        p_vals = mt.calculate_pairwise_pvalues(df, by, which, n, f, save=save, title=title)
 
     fig = plt.figure('boxplot')
     ax = sns.boxplot(x=by, y=which, data=df, **kwargs)
@@ -149,11 +152,48 @@ def plot_boxplot(df, by, which, threshold, n, f=np.mean, **kwargs):
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
 
+    # modify data to plot siginificance bars
+    sig = p_vals < threshold
+    sig = sig.reset_index()
+    sig.rename(columns={'index': 'name_1'}, inplace=True)
+    sig = pd.melt(sig, id_vars='name_1', var_name='name_2', value_name='sig')
+
+    # plot significance bars
+    sig_idxs = []
+    sig_names = []
+    lims = ax.get_ylim()
+    offset = np.diff(lims)[0] * .05 # offset above max observation to start significance bar
+    height = np.diff(lims)[0] * .1
+    count = 0
+    for i, row in sig.iterrows():
+        if row['sig'] and control in row.values:
+            idx_1 = np.where(p_vals.index == row['name_1'])[0][0]
+            idx_2 = np.where(p_vals.index == row['name_2'])[0][0]
+
+            y_1 = df[df[by] == row['name_1']].max()[which] + offset
+            y_2 = df[df[by] == row['name_2']].max()[which] + offset
+            x_1 = idx_1
+            x_2 = idx_2
+
+            y = df.max()[which] + height + (count * height)
+
+            xs = [x_1, x_1, x_2, x_2]
+            ys = [y_1, y, y, y_2]
+
+            plt.plot(xs, ys, lw=1.5, c='k') # plot bars
+
+            # calculate asterisk position
+            x = (x_1 + x_2) / 2
+            y = y - np.diff(lims) * .025
+            plt.text(x, y, "*", ha='center', va='bottom', color='k', fontsize=16)
+            count += 1
+
+    print('#Plotting boxplot')
     plt.savefig(title + '_' + which + '_box.png', dpi=300, bbox_inches='tight')
 
 
 # TODO: does the jitterplot have to use q values too?
-def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, **kwargs):
+def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, save=False, **kwargs):
     """
     Plot a stripplot ordered by the median value of each group.
 
@@ -165,6 +205,7 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, **kwargs)
     threshold --- (float) p value threshold
     n         --- (int) # of bootstraps
     f         --- (function) to calculate delta (default: np.median)
+    save      --- (boolean) save matrix to csv (default: False)
 
     kwargs:
     title  --- (str) plot title
@@ -186,7 +227,7 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, **kwargs)
     if 'p_vals' in kwargs:
         p_vals = kwargs.pop('p_vals')
     else:
-        p_vals = mt.calculate_pairwise_pvalues(df, by, which, n, f)
+        p_vals = mt.calculate_pairwise_pvalues(df, by, which, n, f, save=save, title=title)
 
     # begin data preparation
     grouped = df.groupby(by) # dataframe grouped by index
@@ -230,6 +271,7 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, **kwargs)
     plt.legend()
     ax.yaxis.grid(False)
 
+    print('#Plotting jitterplot')
     plt.savefig(title + '_' + which + '_jitter.png', dpi=300, bbox_inches='tight')
 
 if __name__ == '__main__':
@@ -275,12 +317,15 @@ if __name__ == '__main__':
                         (defaults to first genotype in csv file)',
                         type=str,
                         default=None)
-    parser.add_argument('-s',
+    parser.add_argument('-m',
                         help='Statistic to perform bootstraps. \
                         (default: {})'.format(stat),
                         type=str,
                         choices=fs.keys(),
                         default='mean')
+    parser.add_argument('-s',
+                        help='Save data to csv.',
+                        action='store_true')
     # end command line arguments
     args = parser.parse_args()
 
@@ -288,13 +333,15 @@ if __name__ == '__main__':
     plot_type = args.type
     title = args.title
     n = args.b
-    f = fs[stat]
+    f = fs[args.m]
     threshold = args.q
     by = args.i
     control = args.c
+    s = args.s
 
     df = pd.read_csv(csv_path) # read csv data
 
+    # infer groupby and controls
     if by == None:
         print('#No groupby argument given.')
         by = df.keys()[0]
@@ -303,29 +350,37 @@ if __name__ == '__main__':
     if control == None:
         print('#No control given.')
         control = df[by][0]
-        print('#\tInferred as \'{}\' from data'.format(control))
+        print('#\tInferred as \'{}\' from data\n'.format(control))
 
     for measurement in df:
         if measurement == by:
             continue
 
         # calculate bootstraps
-        p_vals = mt.calculate_pairwise_pvalues(df, by, measurement, n, f=f)
+        p_vals = mt.calculate_pairwise_pvalues(df, by, measurement, n, f=f, save=s, title=title)
         p_vals = p_vals.astype(float)
 
         # TODO: spit out message if user selects jitterplot for > 100 datapoints
         # instead, recommend boxplot
         palette = {'sig': 'red', 'non-sig': 'black', 'control': 'blue'}
+        jitter_args = {'hue': 'sig', 'jitter': True, 'alpha': 0.5, 'palette': palette}
         if plot_type == 'heatmap':
-            plot_qvalue_heatmap(df, by, measurement, threshold, n, f=f, p_vals=p_vals)
+            plot_qvalue_heatmap(df, by, measurement, threshold, n, f=f,
+                                    p_vals=p_vals, save=s, title=title)
         elif plot_type == 'box':
-            plot_boxplot(df, by, measurement, threshold, n, f=f, p_vals=p_vals)
+            plot_boxplot(df, control, by, measurement, threshold, n, f=f,
+                                            p_vals=p_vals, save=s, title=title)
         elif plot_type == 'jitter':
+            count = df.groupby(by)[measurement].size().max()
+            if count > 100:
+                print('\n#There are more than 100 observations for some measurements!')
+                print('#Boxplots are recommended over jitterplots in favor of visibility.\n')
             plot_jitterplot(df, control, by, measurement, threshold, n, f=f,
-                p_vals=p_vals, hue='sig', jitter=True, alpha=0.5, palette=palette)
+                                p_vals=p_vals, save=s, title=title, **jitter_args)
         elif plot_type == 'all':
-            # TODO: when user selects all plots, don't recalculate p value each time
-            # just lookup p values calculated for heatmap
-            plot_qvalue_heatmap(df, by, measurement, threshold, n, f=f, p_vals=p_vals)
+            plot_qvalue_heatmap(df, by, measurement, threshold, n, f=f,
+                                    p_vals=p_vals, save=s, title=title)
+            plot_boxplot(df, control, by, measurement, threshold, n, f=f,
+                                    p_vals=p_vals, save=s, title=title)
             plot_jitterplot(df, control, by, measurement, threshold, n, f=f,
-                p_vals=p_vals, hue='sig', jitter=True, alpha=0.5, palette=palette)
+                                p_vals=p_vals, save=s, title=title, **jitter_args)
