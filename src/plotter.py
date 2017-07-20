@@ -65,6 +65,8 @@ def plot_qvalue_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     elif 'p_vals' in kwargs:
         p_vals = kwargs.pop('p_vals')
         q_vals = mt.calculate_qvalues(p_vals)
+    else:
+        p_vals = mt.calculate_pairwise_pvalues(df, by, which, n, f)
 
     ################################
     # begin plotting
@@ -111,6 +113,7 @@ def plot_qvalue_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     ###########################
 
 # TODO: work in progress...
+# TODO: does the boxplot have to use q values too?
 def plot_boxplot(df, by, which, threshold, n, f=np.mean, **kwargs):
     """
     Plot a boxplot.
@@ -122,8 +125,32 @@ def plot_boxplot(df, by, which, threshold, n, f=np.mean, **kwargs):
     threshold --- (float) p value threshold
     n         --- (int) # of bootstraps
     f         --- (function) to calculate delta (default: np.median)
-    kwargs
+
+    kwargs:
+    title  --- (str) plot title
+    xlabel --- (str) x label
+    ylabel --- (str) y label
+    p_vals --- (pandas.DataFrame) calculated p values
+                    (this function performs bootstraps if p_vals not given)
     """
+    title = kwargs.pop('title', 'title')
+    xlabel = kwargs.pop('xlabel', 'xlabel')
+    ylabel = kwargs.pop('ylabel', 'ylabel')
+
+    if 'p_vals' in kwargs:
+        p_vals = kwargs.pop('p_vals')
+    else:
+        p_vals = mt.calculate_pairwise_pvalues(df, by, which, n, f)
+
+    fig = plt.figure('boxplot')
+    ax = sns.boxplot(x=by, y=which, data=df, **kwargs)
+
+    fig.suptitle(title, fontsize=20)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+
+    plt.savefig(title + '_' + which + '_box.png', dpi=300, bbox_inches='tight')
+
 
 # TODO: does the jitterplot have to use q values too?
 def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, **kwargs):
@@ -292,7 +319,7 @@ if __name__ == '__main__':
         if plot_type == 'heatmap':
             plot_qvalue_heatmap(df, by, measurement, threshold, n, f=f, p_vals=p_vals)
         elif plot_type == 'box':
-            plot_boxplot(df, by, measurement, threshold, n, f=f)
+            plot_boxplot(df, by, measurement, threshold, n, f=f, p_vals=p_vals)
         elif plot_type == 'jitter':
             plot_jitterplot(df, control, by, measurement, threshold, n, f=f,
                 p_vals=p_vals, hue='sig', jitter=True, alpha=0.5, palette=palette)
