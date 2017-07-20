@@ -44,18 +44,32 @@ def plot_qvalue_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     threshold --- (float) q value threshold
     n         --- (int) # of bootstraps
     f=np.mean --- (function) to calculate deltas
-    kwargs
+
+    kwargs:
+    title  --- (str) plot title
+    xlabel --- (str) x label
+    ylabel --- (str) y label
+    p_vals --- (pandas.DataFrame) calculated p values
+                    (automatically performs BH stepup algorithm to calculate qs)
+    q_vals --- (pandas.DataFrame) calculated q values
+                    (this function performs bootstraps if q_vals not given)
     """
     # organize kwargs
     title = kwargs.pop('title', 'title')
     xlabel = kwargs.pop('xlabel', 'xlabel')
     ylabel = kwargs.pop('ylabel', 'ylabel')
 
+    # gate for kwarg arguments
+    if 'q_vals' in kwargs:
+        q_vals = kwargs.pop('q_vals')
+    elif 'p_vals' in kwargs:
+        p_vals = kwargs.pop('p_vals')
+        q_vals = mt.calculate_qvalues(p_vals)
+
     ################################
     # begin plotting
     #
     # drop rows and columns with only nans
-    q_vals = mt.calculate_pairwise_pvalues(df, by, which, n, f)
     q_vals = q_vals.dropna(how='all', axis=0)
     q_vals = q_vals.dropna(how='all', axis=1)
 
@@ -72,7 +86,6 @@ def plot_qvalue_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     values = -values.apply(np.log10)
     vmax = -np.log10(1/n)
     vmin = -np.log10(threshold)
-    print(values)
 
 
     # draw heatmap and apply mask
@@ -112,7 +125,7 @@ def plot_boxplot(df, by, which, threshold, n, f=np.mean, **kwargs):
     kwargs
     """
 
-
+# TODO: does the jitterplot have to use q values too?
 def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, **kwargs):
     """
     Plot a stripplot ordered by the median value of each group.
@@ -125,11 +138,28 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, **kwargs)
     threshold --- (float) p value threshold
     n         --- (int) # of bootstraps
     f         --- (function) to calculate delta (default: np.median)
-    kwargs
+
+    kwargs:
+    title  --- (str) plot title
+    xlabel --- (str) x label
+    ylabel --- (str) y label
+    p_vals --- (pandas.DataFrame) calculated p values
+                    (this function performs bootstraps if p_vals not given)
     """
     title = kwargs.pop('title', 'title')
     xlabel = kwargs.pop('xlabel', 'xlabel')
     ylabel = kwargs.pop('ylabel', 'ylabel')
+
+    # pop() causes the second argument to be calculated again for some reason,
+    # even when 'p_vals' is in kwargs
+    # p_vals = kwargs.pop('p_vals',
+    #                         mt.calculate_pairwise_pvalues(df, by, which, n, f))
+
+    # messy alternative to pop() bug(?)
+    if 'p_vals' in kwargs:
+        p_vals = kwargs.pop('p_vals')
+    else:
+        p_vals = mt.calculate_pairwise_pvalues(df, by, which, n, f)
 
     # begin data preparation
     grouped = df.groupby(by) # dataframe grouped by index
@@ -137,15 +167,16 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, **kwargs)
     df_control = df[df[by] == control][which].values
     ps = {} # hash to store p values
     ps[control] = 'control'
-    med = {} # hash to store medians
+    stat = {} # hash to store statistics
 
     for name, group in grouped:
-        med[name] = group[which].median()
+        stat[name] = f(group[which])
 
         if not name == control:
-            # TODO: multithread this too --- don't be redundant!!!!!!!!
-            delta_obs, delta_bootstrapped = mt.calculate_delta(group[which].values, df_control, n, f)
-            p = mt.calculate_pvalue(delta_obs, delta_bootstrapped)
+            # assign correct p value (not nan)
+            p = p_vals[control][name]
+            if np.isnan(p):
+                p = p_vals[name][control]
 
             if p < threshold:
                 ps[name] = 'sig'
@@ -156,8 +187,8 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, **kwargs)
 
     # sort by median
     df2 = df.copy()
-    df2['med'] = df2[by].map(med)
-    df2.sort_values('med', inplace=True)
+    df2['stat'] = df2[by].map(stat)
+    df2.sort_values('stat', inplace=True)
 
     # plot figure
     fig = plt.figure('jitterplot')
@@ -172,13 +203,16 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.median, **kwargs)
     plt.legend()
     ax.yaxis.grid(False)
 
-    plt.savefig(title + '_' + which + '_jitterplot.png', dpi=300, bbox_inches='tight')
+    plt.savefig(title + '_' + which + '_jitter.png', dpi=300, bbox_inches='tight')
 
 if __name__ == '__main__':
     import argparse
 
     n = 100
     qval = 0.05
+    stat = 'mean'
+    fs = {'mean': np.mean,
+            'median': np.median}
 
     parser = argparse.ArgumentParser(description='Plot graphs of significance.')
     # begin command line arguments
@@ -201,7 +235,7 @@ if __name__ == '__main__':
                         default=100)
     parser.add_argument('-q',
                         help='Q value threshold for significance. \
-                        (default: {0})'.format(qval),
+                        (default: {})'.format(qval),
                         type=float,
                         default=0.05)
     parser.add_argument('-i',
@@ -214,6 +248,12 @@ if __name__ == '__main__':
                         (defaults to first genotype in csv file)',
                         type=str,
                         default=None)
+    parser.add_argument('-s',
+                        help='Statistic to perform bootstraps. \
+                        (default: {})'.format(stat),
+                        type=str,
+                        choices=fs.keys(),
+                        default='mean')
     # end command line arguments
     args = parser.parse_args()
 
@@ -221,6 +261,7 @@ if __name__ == '__main__':
     plot_type = args.type
     title = args.title
     n = args.b
+    f = fs[stat]
     threshold = args.q
     by = args.i
     control = args.c
@@ -228,29 +269,36 @@ if __name__ == '__main__':
     df = pd.read_csv(csv_path) # read csv data
 
     if by == None:
+        print('#No groupby argument given.')
         by = df.keys()[0]
+        print('#\tInferred as \'{}\' from data.'.format(by))
 
     if control == None:
+        print('#No control given.')
         control = df[by][0]
+        print('#\tInferred as \'{}\' from data'.format(control))
 
     for measurement in df:
         if measurement == by:
             continue
 
-    # TODO: spit out message if user selects jitterplot for > 100 datapoints
-    # instead, recommend boxplot
-    if plot_type == 'heatmap':
-        plot_qvalue_heatmap(df, by, measurement, threshold, n)
-    elif plot_type == 'box':
-        plot_boxplot(df, by, measurement, threshold, n)
-    elif plot_type == 'jitter':
+        # calculate bootstraps
+        p_vals = mt.calculate_pairwise_pvalues(df, by, measurement, n, f=f)
+        p_vals = p_vals.astype(float)
+
+        # TODO: spit out message if user selects jitterplot for > 100 datapoints
+        # instead, recommend boxplot
         palette = {'sig': 'red', 'non-sig': 'black', 'control': 'blue'}
-        plot_jitterplot(df, control, by, measurement, threshold, n, hue='sig',\
-                                        jitter=True, alpha=0.5, palette=palette)
-    elif plot_type == 'all':
-        # TODO: when user selects all plots, don't recalculate p value each time
-        # just lookup p values calculated for heatmap
-        plot_qvalue_heatmap(df, by, measurement, threshold, n)
-        palette = {'sig': 'red', 'non-sig': 'black', 'control': 'blue'}
-        plot_jitterplot(df, control, by, measurement, threshold, n, hue='sig',\
-                                        jitter=True, alpha=0.5, palette=palette)
+        if plot_type == 'heatmap':
+            plot_qvalue_heatmap(df, by, measurement, threshold, n, f=f, p_vals=p_vals)
+        elif plot_type == 'box':
+            plot_boxplot(df, by, measurement, threshold, n, f=f)
+        elif plot_type == 'jitter':
+            plot_jitterplot(df, control, by, measurement, threshold, n, f=f,
+                p_vals=p_vals, hue='sig', jitter=True, alpha=0.5, palette=palette)
+        elif plot_type == 'all':
+            # TODO: when user selects all plots, don't recalculate p value each time
+            # just lookup p values calculated for heatmap
+            plot_qvalue_heatmap(df, by, measurement, threshold, n, f=f, p_vals=p_vals)
+            plot_jitterplot(df, control, by, measurement, threshold, n, f=f,
+                p_vals=p_vals, hue='sig', jitter=True, alpha=0.5, palette=palette)
