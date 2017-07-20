@@ -1,5 +1,5 @@
 """
-
+TODO: simplify & organize code -- use **kwargs for functions with multiple args
 """
 
 import pandas as pd
@@ -60,7 +60,7 @@ def bootstrap_deltas(x, y, n, f=np.mean):
 
     return delta
 
-def calculate_pairwise_pvalues(df, by, which, n, f=np.mean):
+def calculate_pairwise_pvalues(df, by, which, n, f=np.mean, save=False, title=None):
     """
     Calculates the p values of each pairwise comparison.
     This function calls calculate_delta() and calculate_pvalue()
@@ -133,10 +133,15 @@ def calculate_pairwise_pvalues(df, by, which, n, f=np.mean):
         gene_1, gene_2, delta_obs, deltas_bootstrapped = qu.get()
         p_vals[gene_1][gene_2] = calculate_pvalue(delta_obs, deltas_bootstrapped)
 
-    print('#Bootstrapping of {} threads complete.'.format(len(threads)))
+    print('\n#Bootstrapping of {} threads complete.'.format(len(threads)))
 
     print('\n#P-value matrix:')
     print(p_vals)
+
+    # save matrix to csv
+    if save:
+        print('#Saving p-value matrix')
+        save_matrix(p_vals, '{}_{}_p'.format(title, which))
 
     return p_vals
 
@@ -238,7 +243,7 @@ def make_empty_dataframe(rows, cols, row_labels, col_labels):
 
     return matrix
 
-def calculate_qvalues(p_vals):
+def calculate_qvalues(p_vals, save=False, title=None):
     """
     Calculates the q values.
     This function calls benjamin_hochberg_stepup()
@@ -269,6 +274,11 @@ def calculate_qvalues(p_vals):
 
     print('\n#Q-value matrix:')
     print(q_vals)
+
+    # save matrix to csv
+    if save:
+        print('#Saving q-value matrix')
+        save_matrix(q_vals, '{}_q'.format(title))
 
     return q_vals
 
@@ -307,6 +317,26 @@ def benjamin_hochberg_stepup(p_vals):
 
     return q_vals_sorted, idx_no_nan
 
+def save_matrix(matrix, title):
+    """
+    Saves the matrix in both 2d and tidy csv format.
+
+    Params:
+    matrix --- (pandas.DataFrame) matrix to be saved
+    title  --- (str) matrix title
+
+    Returns: none
+    """
+    matrix.to_csv('{}_matrix.csv'.format(title))
+
+    # convert to tidy format
+    tidy = matrix.reset_index()
+    tidy.rename(columns={'index': 'name_1'}, inplace=True)
+    tidy = pd.melt(tidy, id_vars='name_1', var_name="name_2", value_name="p")
+    tidy = tidy.dropna()
+
+    tidy.to_csv('{}_tidy.csv'.format(title))
+
 
 if __name__ == '__main__':
     import argparse
@@ -339,6 +369,9 @@ if __name__ == '__main__':
                         (defaults to first element of the csv file)',
                         type=str,
                         default=None)
+    parser.add_argument('-s',
+                        help='Save data to csv.',
+                        action='store_true')
     # end command line arguments
     args = parser.parse_args()
 
@@ -347,6 +380,7 @@ if __name__ == '__main__':
     n = args.b
     threshold = args.q
     by = args.i
+    save = args.s
 
     df = pd.read_csv(csv_path) # read csv data
 
@@ -379,11 +413,11 @@ if __name__ == '__main__':
             continue
 
         # calculate pvalues
-        p_vals = calculate_pairwise_pvalues(df, by, measurement, n, f=np.mean)
+        p_vals = calculate_pairwise_pvalues(df, by, measurement, n, f=np.mean, save=s)
         p_vals = p_vals.astype(float)
 
         # calculate q_values
-        q_vals = calculate_qvalues(p_vals)
+        q_vals = calculate_qvalues(p_vals, save=s)
         #
         # plot qvalues
         plot_qvalue_heatmaps(q_vals, threshold, n, measurement, title=title)
