@@ -60,7 +60,7 @@ def bootstrap_deltas(x, y, n, f=np.mean):
 
     return delta
 
-def calculate_pairwise_pvalues(df, by, which, n, f=np.mean, save=False, title=None):
+def calculate_pairwise_pvalues(df, by, which, n, f=np.mean, **kwargs):
     """
     Calculates the p values of each pairwise comparison.
     This function calls calculate_delta() and calculate_pvalue()
@@ -72,9 +72,16 @@ def calculate_pairwise_pvalues(df, by, which, n, f=np.mean, save=False, title=No
     n     --- (int) # of bootstraps
     f     --- (function) to calculate deltas
 
+    kwargs:
+    s     --- (boolean) whether to save matrix to csv (default: False)
+    fname --- (str) csv file name
+
     Returns:
     p_vals --- (pandas.DataFrame) of pairwise p values
     """
+    # assign kwargs
+    s = kwargs.pop('s', False)
+    fname = kwargs.pop('fname', None)
 
     df = df.set_index(by) # set genotype as index
     df = df.astype(float)
@@ -139,9 +146,9 @@ def calculate_pairwise_pvalues(df, by, which, n, f=np.mean, save=False, title=No
     print(p_vals)
 
     # save matrix to csv
-    if save:
+    if s:
         print('#Saving p-value matrix')
-        save_matrix(p_vals, '{}_{}_p'.format(title, which))
+        save_matrix(p_vals, fname)
 
     return p_vals
 
@@ -243,17 +250,24 @@ def make_empty_dataframe(rows, cols, row_labels, col_labels):
 
     return matrix
 
-def calculate_qvalues(p_vals, save=False, title=None):
+def calculate_qvalues(p_vals, **kwargs): # save=False, title=None):
     """
     Calculates the q values.
     This function calls benjamin_hochberg_stepup()
 
     Params:
     p_vals --- (pandas.DataFrame) of pairwise p values
+    kwargs:
+    s     --- (boolean) whether to save matrix to csv (default: False)
+    fname --- (str) output csv filename
 
     Returns:
     q_vals --- (pandas.DataFrame) of pairwise q values
     """
+    # assign kwargs
+    s = kwargs.pop('s', False)
+    fname = kwargs.pop('fname', None)
+
     # flatten 2d array to 1d
     flat = p_vals.values.flatten()
 
@@ -276,9 +290,9 @@ def calculate_qvalues(p_vals, save=False, title=None):
     print(q_vals)
 
     # save matrix to csv
-    if save:
+    if s:
         print('#Saving q-value matrix')
-        save_matrix(q_vals, '{}_q'.format(title))
+        save_matrix(q_vals, fname)
 
     return q_vals
 
@@ -317,17 +331,17 @@ def benjamin_hochberg_stepup(p_vals):
 
     return q_vals_sorted, idx_no_nan
 
-def save_matrix(matrix, title):
+def save_matrix(matrix, fname):
     """
     Saves the matrix in both 2d and tidy csv format.
 
     Params:
     matrix --- (pandas.DataFrame) matrix to be saved
-    title  --- (str) matrix title
+    fname  --- (str) output csv filename
 
     Returns: none
     """
-    matrix.to_csv('{}_matrix.csv'.format(title))
+    matrix.to_csv('{}_matrix.csv'.format(fname))
 
     # convert to tidy format
     tidy = matrix.reset_index()
@@ -335,11 +349,12 @@ def save_matrix(matrix, title):
     tidy = pd.melt(tidy, id_vars='name_1', var_name="name_2", value_name="p")
     tidy = tidy.dropna()
 
-    tidy.to_csv('{}_tidy.csv'.format(title))
+    tidy.to_csv('{}_tidy.csv'.format(fname))
 
 
 if __name__ == '__main__':
     import argparse
+    import os
 
     n = 100
     qval = 0.05
@@ -381,6 +396,9 @@ if __name__ == '__main__':
     threshold = args.q
     by = args.i
     save = args.s
+
+    # change directory to title
+    os.chdir(title)
 
     df = pd.read_csv(csv_path) # read csv data
 
