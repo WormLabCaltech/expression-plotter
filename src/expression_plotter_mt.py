@@ -60,7 +60,7 @@ def bootstrap_deltas(x, y, n, f=np.mean):
 
     return delta
 
-def calculate_pairwise_pvalues(df, by, which, n, f=np.mean, **kwargs):
+def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
     """
     Calculates the p values of each pairwise comparison.
     This function calls calculate_delta() and calculate_pvalue()
@@ -82,6 +82,7 @@ def calculate_pairwise_pvalues(df, by, which, n, f=np.mean, **kwargs):
     # assign kwargs
     s = kwargs.pop('s', False)
     fname = kwargs.pop('fname', None)
+    ctrl = kwargs.pop('ctrl', None)
 
     df = df.set_index(by) # set genotype as index
     df = df.astype(float)
@@ -102,32 +103,38 @@ def calculate_pairwise_pvalues(df, by, which, n, f=np.mean, **kwargs):
     p_vals = make_empty_dataframe(len(genotypes),\
             len(genotypes), genotypes, genotypes) # empty pandas dataframe
 
-    pairs = []
     threads = []
     qu = queue.Queue()
 
     # for loop to iterate through all pairwise comparisons (not permutation)
     print('#Starting threads for bootstrapping...')
-    for pair in it.combinations(genotypes, 2):
-        # observed delta & bootstrapped deltas
-        # delta, delta_array = calculate_delta(matrix[pair[0]], matrix[pair[1]],\
-                                                #bootstraps)
+    # if no control is given, perform all pairwise comparisons
+    if ctrl == None:
+        for pair in it.combinations(genotypes, 2):
+            # observed delta & bootstrapped deltas
+            # delta, delta_array = calculate_delta(matrix[pair[0]], matrix[pair[1]],\
+                                                    #bootstraps)
 
-        thread = threading.Thread(target=calculate_delta_queue,\
-                                args=(matrix, pair[0], pair[1], n, qu))
-        threads.append(thread)
-        pairs.append(pair)
+            thread = threading.Thread(target=calculate_delta_queue,\
+                                    args=(matrix, pair[0], pair[1], n, qu))
+            threads.append(thread)
 
-        thread.setDaemon(True)
-        thread.start()
+            thread.setDaemon(True)
+            thread.start()
 
-        # assign to dataframe
-        # TODO: is this assignment necessary? is it needed later?
-        # obs_delta[pair[0]][pair[1]] = delta
-        # boot_deltas[pair[0]][pair[1]] = delta_array
-        #
-        # # calculate p value
-        # p_vals[pair[0]][pair[1]] = calculate_pvalue(delta, delta_array)
+    # control given
+    else:
+        for genotype in genotypes:
+            if genotype == ctrl:
+                continue
+
+            thread = threading.Thread(target=calculate_delta_queue,
+                                    args=(matrix, ctrl, genotype, n, qu))
+            threads.append(thread)
+
+            thread.setDaemon(True)
+            thread.start()
+
 
 
     # threads = [threading.Thread(target=calculate_delta, args=(matrix[pair[0]],\
@@ -341,15 +348,19 @@ def save_matrix(matrix, fname):
 
     Returns: none
     """
+    matrix = matrix.dropna(how='all', axis=0)
+    matrix = matrix.dropna(how='all', axis=1)
+
     matrix.to_csv('{}_matrix.csv'.format(fname))
 
-    # convert to tidy format
-    tidy = matrix.reset_index()
-    tidy.rename(columns={'index': 'name_1'}, inplace=True)
-    tidy = pd.melt(tidy, id_vars='name_1', var_name="name_2", value_name="p")
-    tidy = tidy.dropna()
+    # convert to tidy format if matrix has more than one column
+    if len(matrix.reset_index().keys()) > 2:
+        tidy = matrix.reset_index()
+        tidy.rename(columns={'index': 'name_1'}, inplace=True)
+        tidy = pd.melt(tidy, id_vars='name_1', var_name="name_2", value_name="p")
+        tidy = tidy.dropna()
 
-    tidy.to_csv('{}_tidy.csv'.format(fname))
+        tidy.to_csv('{}_tidy.csv'.format(fname))
 
 
 if __name__ == '__main__':
@@ -431,7 +442,7 @@ if __name__ == '__main__':
             continue
 
         # calculate pvalues
-        p_vals = calculate_pairwise_pvalues(df, by, measurement, n, f=np.mean, save=s)
+        p_vals = calculate_pvalues(df, by, measurement, n, f=np.mean, save=s)
         p_vals = p_vals.astype(float)
 
         # calculate q_values
