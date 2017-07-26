@@ -32,7 +32,7 @@ mpl.rcParams['xtick.labelsize'] = 16
 mpl.rcParams['ytick.labelsize'] = 16
 mpl.rcParams['legend.fontsize'] = 14
 
-
+# TODO: one-vs-all heatmap has very long axis -- need to fix
 def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     """
     Plots heatmap of q values. Saves graph.
@@ -66,7 +66,7 @@ def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     if 'vals' in kwargs:
         vals = kwargs.pop('vals')
     else:
-        vals = mt.calculate_pairwise_pvalues(df, by, which, n, f, s=s, fname=fname)
+        vals = mt.calculate_pvalues(df, by, which, n, f, s=s, fname=fname)
         vals = mt.calculate_qvalues(vals, s=s, fname=fname)
 
     ################################
@@ -108,13 +108,12 @@ def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     plt.xticks(rotation=45)
 
     print('#Plotting heatmap')
-    plt.savefig(title + '_' + which + '_heatmap.png', dpi=300, bbox_inches='tight')
+    plt.savefig(which + '_heatmap.png', dpi=300, bbox_inches='tight')
     #
     # end plotting
     ###########################
 
-# TODO: work in progress...
-# TODO: does the boxplot have to use q values too?
+# TODO: color-code significant boxes instead of using asterisks
 def plot_boxplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
     """
     Plot a boxplot.
@@ -148,7 +147,7 @@ def plot_boxplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
     if 'vals' in kwargs:
         vals = kwargs.pop('vals')
     else:
-        vals = mt.calculate_pairwise_pvalues(df, by, which, n, f, s=s, fname=fname)
+        vals = mt.calculate_pvalues(df, by, which, n, f, s=s, fname=fname)
         vals = mt.calculate_qvalues(vals, s=s, fname=fname)
 
     fig = plt.figure('boxplot')
@@ -195,10 +194,9 @@ def plot_boxplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
             count += 1
 
     print('#Plotting boxplot')
-    plt.savefig(title + '_' + which + '_box.png', dpi=300, bbox_inches='tight')
+    plt.savefig(which + '_box.png', dpi=300, bbox_inches='tight')
 
 
-# TODO: does the jitterplot have to use q values too?
 def plot_jitterplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
     """
     Plot a stripplot ordered by the mean value of each group.
@@ -238,7 +236,7 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
     if 'vals' in kwargs:
         vals = kwargs.pop('vals')
     else:
-        vals = mt.calculate_pairwise_pvalues(df, by, which, n, f, s=s, fname=fname)
+        vals = mt.calculate_pvalues(df, by, which, n, f, s=s, fname=fname)
         vals = mt.calculate_qvalues(vals, s=s, fname=fname)
 
     # begin data preparation
@@ -284,7 +282,7 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
     ax.yaxis.grid(False)
 
     print('#Plotting jitterplot')
-    plt.savefig(title + '_' + which + '_jitter.png', dpi=300, bbox_inches='tight')
+    plt.savefig(which + '_jitter.png', dpi=300, bbox_inches='tight')
 
 if __name__ == '__main__':
     import argparse
@@ -326,7 +324,7 @@ if __name__ == '__main__':
                         type=str,
                         default=None)
     parser.add_argument('-c',
-                        help='Control genotype for jitterplot. \
+                        help='Control genotype. \
                         (defaults to first genotype in csv file)',
                         type=str,
                         default=None)
@@ -336,8 +334,11 @@ if __name__ == '__main__':
                         type=str,
                         choices=fs.keys(),
                         default='mean')
-    parser.add_argument('-s',
-                        help='Save data to csv.',
+    parser.add_argument('--one-vs-all',
+                        help='Perform one-vs-all analysis. (default: all-vs-all)',
+                        action='store_true')
+    parser.add_argument('--save',
+                        help='Save data to csv. Plots are always saved regardless.',
                         action='store_true')
     # end command line arguments
     args = parser.parse_args()
@@ -350,7 +351,8 @@ if __name__ == '__main__':
     t = args.q
     by = args.i
     ctrl = args.c
-    s = args.s
+    ova = args.one_vs_all
+    s = args.save
 
     df = pd.read_csv(csv_path) # read csv data
 
@@ -377,9 +379,14 @@ if __name__ == '__main__':
         if m == by:
             continue
 
+        if ova:
+            ova_ctrl = ctrl
+        else:
+            ova_ctrl = None
+
         # calculate bootstraps
-        p_vals = mt.calculate_pairwise_pvalues(df, by, m, n, f=f, s=s,
-                                            fname='{}_p'.format(m))
+        p_vals = mt.calculate_pvalues(df, by, m, n, f=f, s=s,
+                                            fname='{}_p'.format(m), ctrl=ova_ctrl)
         p_vals = p_vals.astype(float)
         q_vals = mt.calculate_qvalues(p_vals, s=s, fname='{}_q'.format(m))
 
