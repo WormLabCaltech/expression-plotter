@@ -1,5 +1,8 @@
 """
-TODO: simplify & organize code -- use **kwargs for functions with multiple args
+Author: Joseph Min (kmin@caltech.edu)
+
+This script is used to plot graphs of a given dataset.
+It calls functions from expression_plotter_mt to determine significance.
 """
 
 import numpy as np
@@ -33,7 +36,7 @@ mpl.rcParams['ytick.labelsize'] = 16
 mpl.rcParams['legend.fontsize'] = 14
 
 # TODO: one-vs-all heatmap has very long axis -- need to fix
-def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
+def plot_heatmap(df, by, which, threshold, f=np.mean, **kwargs):
     """
     Plots heatmap of q values. Saves graph.
 
@@ -42,7 +45,6 @@ def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     by        --- (String) which label to sort
     which     --- (str) which column to perform comparison
     threshold --- (float) q value threshold
-    n         --- (int) # of bootstraps
     f         --- (function) to calculate deltas (default: np.mean)
 
     kwargs:
@@ -54,6 +56,7 @@ def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     ylabel --- (str) y label
     vals --- (pandas.DataFrame) calculated p/q values
                     (performs bootstraps for q values if not given)
+    n    --- (int) # of bootstraps (default: 10^4)
     """
     # organize kwargs
     s = kwargs.pop('s', False)
@@ -61,6 +64,7 @@ def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     title = kwargs.pop('title', 'title')
     xlabel = kwargs.pop('xlabel', 'xlabel')
     ylabel = kwargs.pop('ylabel', 'ylabel')
+    n = kwargs.pop('n', 10**4)
 
     # gate for p/q values
     if 'vals' in kwargs:
@@ -76,13 +80,21 @@ def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     vals = vals.dropna(how='all', axis=0)
     vals = vals.dropna(how='all', axis=1)
 
+    # make heatmap wide left-right for one-vs-all analysis
+    cbar_kws = {}
+    figsize = None
+    if len(vals.keys()) == 1:
+        vals = vals.transpose()
+        cbar_kws['orientation'] = 'horizontal'
+        figsize = (len(vals.keys()) * .8 + 1, 2)
+
     # create mask for insiginificant & nan values
     array = vals.values.astype(float)
     mask = np.nan_to_num(array) > threshold
     mask_nan = np.isnan(array)
 
     # switch to current figure
-    fig = plt.figure('heatmap')
+    fig = plt.figure('heatmap_{}'.format(which), figsize=figsize)
 
     # convert values to reciprocal log
     values = vals.replace(0.0, 1/n)
@@ -90,10 +102,11 @@ def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     vmax = -np.log10(1/n)
     vmin = -np.log10(threshold)
 
+    cbar_kws['label'] = r'$-\log_{10}(q)$'
 
     # draw heatmap and apply mask
     ax = sns.heatmap(values, cmap='magma', mask=mask, vmin=vmin, vmax=vmax,\
-                        cbar_kws={'label':r'$-\log_{10}(q)$'}, **kwargs)
+                        cbar_kws=cbar_kws, **kwargs)
     ax_mask = sns.heatmap(values.fillna(0),\
                             cmap=mpl.colors.ListedColormap(['white']),\
                             mask=~mask_nan, cbar=False)
@@ -102,7 +115,7 @@ def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     ax.xaxis.tick_top()
     ax.invert_yaxis()
 
-    fig.suptitle(title, y=1.07, fontsize=20)
+    # fig.suptitle(title, y=1.07, fontsize=20)
     ax.set_ylabel(ylabel)
     plt.yticks(rotation='horizontal')
     plt.xticks(rotation=45)
@@ -114,7 +127,7 @@ def plot_heatmap(df, by, which, threshold, n, f=np.mean, **kwargs):
     ###########################
 
 # TODO: color-code significant boxes instead of using asterisks
-def plot_boxplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
+def plot_boxplot(df, control, by, which, threshold, f=np.mean, **kwargs):
     """
     Plot a boxplot.
 
@@ -124,7 +137,6 @@ def plot_boxplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
     by        --- (str) index to group by
     which     --- (str) column to perform analysis
     threshold --- (float) p value threshold
-    n         --- (int) # of bootstraps
     f         --- (function) to calculate delta (default: np.mean)
 
     kwargs:
@@ -136,12 +148,14 @@ def plot_boxplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
     ylabel --- (str) y label
     vals --- (pandas.DataFrame) calculated p/q values
                     (performs bootstraps for q values if not given)
+    n    --- (int) # of bootstraps (default: 10^4)
     """
     s = kwargs.pop('s', False)
     fname = kwargs.pop('fname', None)
     title = kwargs.pop('title', 'title')
     xlabel = kwargs.pop('xlabel', 'xlabel')
     ylabel = kwargs.pop('ylabel', 'ylabel')
+    n = kwargs.pop('n', 10**4)
 
     # gate for p/q values
     if 'vals' in kwargs:
@@ -150,54 +164,60 @@ def plot_boxplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
         vals = mt.calculate_pvalues(df, by, which, n, f, s=s, fname=fname)
         vals = mt.calculate_qvalues(vals, s=s, fname=fname)
 
-    fig = plt.figure('boxplot')
-    ax = sns.boxplot(x=by, y=which, data=df, **kwargs)
+    # dataframe with mapped significance
+    df2 = mt.get_signifcance(df, vals, control, by, which, threshold, f=f)
 
-    fig.suptitle(title, fontsize=20)
+    fig = plt.figure('boxplot_{}'.format(which))
+    ax = sns.boxplot(x=which, y=by, data=df2, **kwargs)
+    plt.axvline(f(df2[df2[by] == control][which]), ls='--', color='blue',\
+                                                lw=1, label='control statistic')
+
+    # fig.suptitle(title, fontsize=20)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
 
-    # modify data to plot siginificance bars
-    sig = vals < threshold
-    sig = sig.reset_index()
-    sig.rename(columns={'index': 'name_1'}, inplace=True)
-    sig = pd.melt(sig, id_vars='name_1', var_name='name_2', value_name='sig')
-
-    # plot significance bars
-    sig_idxs = []
-    sig_names = []
-    lims = ax.get_ylim()
-    offset = np.diff(lims)[0] * .05 # offset above max observation to start significance bar
-    height = np.diff(lims)[0] * .1
-    count = 0
-    for i, row in sig.iterrows():
-        if row['sig'] and control in row.values:
-            idx_1 = np.where(p_vals.index == row['name_1'])[0][0]
-            idx_2 = np.where(p_vals.index == row['name_2'])[0][0]
-
-            y_1 = df[df[by] == row['name_1']].max()[which] + offset
-            y_2 = df[df[by] == row['name_2']].max()[which] + offset
-            x_1 = idx_1
-            x_2 = idx_2
-
-            y = df.max()[which] + height + (count * height)
-
-            xs = [x_1, x_1, x_2, x_2]
-            ys = [y_1, y, y, y_2]
-
-            plt.plot(xs, ys, lw=1.5, c='k') # plot bars
-
-            # calculate asterisk position
-            x = (x_1 + x_2) / 2
-            y = y - np.diff(lims) * .025
-            plt.text(x, y, "*", ha='center', va='bottom', color='k', fontsize=16)
-            count += 1
+    # 7/27/2017 remove significance bars in favor of significance colors
+    # # modify data to plot siginificance bars
+    # sig = vals < threshold
+    # sig = sig.reset_index()
+    # sig.rename(columns={'index': 'name_1'}, inplace=True)
+    # sig = pd.melt(sig, id_vars='name_1', var_name='name_2', value_name='sig')
+    #
+    # # plot significance bars
+    # sig_idxs = []
+    # sig_names = []
+    # lims = ax.get_ylim()
+    # offset = np.diff(lims)[0] * .05 # offset above max observation to start significance bar
+    # height = np.diff(lims)[0] * .1
+    # count = 0
+    # for i, row in sig.iterrows():
+    #     if row['sig'] and control in row.values:
+    #         idx_1 = np.where(p_vals.index == row['name_1'])[0][0]
+    #         idx_2 = np.where(p_vals.index == row['name_2'])[0][0]
+    #
+    #         y_1 = df[df[by] == row['name_1']].max()[which] + offset
+    #         y_2 = df[df[by] == row['name_2']].max()[which] + offset
+    #         x_1 = idx_1
+    #         x_2 = idx_2
+    #
+    #         y = df.max()[which] + height + (count * height)
+    #
+    #         xs = [x_1, x_1, x_2, x_2]
+    #         ys = [y_1, y, y, y_2]
+    #
+    #         plt.plot(xs, ys, lw=1.5, c='k') # plot bars
+    #
+    #         # calculate asterisk position
+    #         x = (x_1 + x_2) / 2
+    #         y = y - np.diff(lims) * .025
+    #         plt.text(x, y, "*", ha='center', va='bottom', color='k', fontsize=16)
+    #         count += 1
 
     print('#Plotting boxplot')
     plt.savefig(which + '_box.png', dpi=300, bbox_inches='tight')
 
 
-def plot_jitterplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
+def plot_jitterplot(df, control, by, which, threshold, f=np.mean, **kwargs):
     """
     Plot a stripplot ordered by the mean value of each group.
 
@@ -207,7 +227,6 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
     by        --- (str) index to group by
     which     --- (str) column to perform analysis
     threshold --- (float) p value threshold
-    n         --- (int) # of bootstraps
     f         --- (function) to calculate delta (default: np.mean)
 
     kwargs:
@@ -219,12 +238,14 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
     ylabel --- (str) y label
     vals   --- (pandas.DataFrame) calculated p/q values
                     (performs bootstraps for q values if not given)
+    n      --- (int) # of bootstraps (default: 10^4)
     """
     s = kwargs.pop('s', False)
     fname = kwargs.pop('fname', None)
     title = kwargs.pop('title', 'title')
     xlabel = kwargs.pop('xlabel', 'xlabel')
     ylabel = kwargs.pop('ylabel', 'ylabel')
+    n = kwargs.pop('n', 10**4)
 
     # pop() causes the second argument to be calculated again for some reason,
     # even when 'p_vals' is in kwargs
@@ -239,40 +260,13 @@ def plot_jitterplot(df, control, by, which, threshold, n, f=np.mean, **kwargs):
         vals = mt.calculate_pvalues(df, by, which, n, f, s=s, fname=fname)
         vals = mt.calculate_qvalues(vals, s=s, fname=fname)
 
-    # begin data preparation
-    grouped = df.groupby(by) # dataframe grouped by index
-
-    df_control = df[df[by] == control][which].values
-    ps = {} # hash to store p values
-    ps[control] = 'control'
-    stat = {} # hash to store statistics
-
-    for name, group in grouped:
-        stat[name] = f(group[which])
-
-        if not name == control:
-            # assign correct p value (not nan)
-            p = vals[control][name]
-            if np.isnan(p):
-                p = vals[name][control]
-
-            if p < threshold:
-                ps[name] = 'sig'
-            else:
-                ps[name] = 'non-sig'
-
-    df['sig'] = df[by].map(ps)
-
-    # sort by median
-    df2 = df.copy()
-    df2['stat'] = df2[by].map(stat)
-    df2.sort_values('stat', inplace=True)
+    df2 = mt.get_signifcance(df, vals, control, by, which, threshold, f=f)
 
     # plot figure
-    fig = plt.figure('jitterplot')
+    fig = plt.figure('jitterplot_{}'.format(which))
     ax = sns.stripplot(x=which, y=by, data=df2, **kwargs)
-    plt.axvline(df2[df2[by] == control][which].median(), ls='--', color='blue',\
-                                                lw=1, label='control median')
+    plt.axvline(f(df2[df2[by] == control][which]), ls='--', color='blue',\
+                                                lw=1, label='control statistic')
 
     fig.suptitle(title, fontsize=20)
     plt.xlabel(xlabel)
@@ -320,7 +314,7 @@ if __name__ == '__main__':
                         default=0.05)
     parser.add_argument('-i',
                         help='Label to group measurements by. \
-                        (defaults to first element of the csv file)',
+                        (defaults to first column of the csv file)',
                         type=str,
                         default=None)
     parser.add_argument('-c',
@@ -366,18 +360,20 @@ if __name__ == '__main__':
 
     # infer groupby and controls
     if by == None:
-        print('#No groupby argument given.')
+        print('##No groupby argument given.')
         by = df.keys()[0]
-        print('#\tInferred as \'{}\' from data.'.format(by))
+        print('#\tInferred as \'{}\' from data.\n'.format(by))
 
     if ctrl == None:
-        print('#No control given.')
+        print('##No control given.')
         ctrl = df[by][0]
         print('#\tInferred as \'{}\' from data\n'.format(ctrl))
 
     for m in df:
         if m == by:
             continue
+
+        print('\n####### Performing analysis on {}. #######'.format(m))
 
         if ova:
             ova_ctrl = ctrl
@@ -390,11 +386,11 @@ if __name__ == '__main__':
         p_vals = p_vals.astype(float)
         q_vals = mt.calculate_qvalues(p_vals, s=s, fname='{}_q'.format(m))
 
-        # arguments
-
         palette = {'sig': 'red',
-                    'non-sig': 'black',
+                    'non-sig': 'grey',
                     'control': 'blue'}
+        boxplot_kwargs = {'hue': 'sig',
+                            'palette': palette}
         jitter_kwargs = {'hue': 'sig',
                         'jitter': True,
                         'alpha': 0.5,
@@ -402,9 +398,9 @@ if __name__ == '__main__':
 
 
         if plot_type == 'heatmap':
-            plot_heatmap(df, by, m, t, n, f=f, vals=q_vals, title=title)
+            plot_heatmap(df, by, m, t, f=f, vals=q_vals, title=title)
         elif plot_type == 'box':
-            plot_boxplot(df, ctrl, by, m, t, n, f=f, vals=q_vals, title=title)
+            plot_boxplot(df, ctrl, by, m, t, f=f, vals=q_vals, title=title, **boxplot_kwargs)
         elif plot_type == 'jitter':
             # print warning if any measurement has >100 datapoints
             count = df.groupby(by)[m].size().max()
@@ -412,8 +408,8 @@ if __name__ == '__main__':
                 print('\n#There are more than 100 observations for some measurements!')
                 print('#Boxplots are recommended over jitterplots in favor of visibility.\n')
 
-            plot_jitterplot(df, ctrl, by, m, t, n, f=f, vals=p_vals, title=title, **jitter_kwargs)
+            plot_jitterplot(df, ctrl, by, m, t, f=f, vals=q_vals, title=title, **jitter_kwargs)
         elif plot_type == 'all':
-            plot_heatmap(df, by, m, t, n, f=f, vals=p_vals, title=title)
-            plot_boxplot(df, ctrl, by, m, t, n, f=f, vals=p_vals, title=title)
-            plot_jitterplot(df, ctrl, by, m, t, n, f=f, vals=p_vals, title=title, **jitter_kwargs)
+            plot_heatmap(df, by, m, t, f=f, vals=q_vals, title=title)
+            plot_boxplot(df, ctrl, by, m, t, f=f, vals=q_vals, title=title, **boxplot_kwargs)
+            plot_jitterplot(df, ctrl, by, m, t, f=f, vals=q_vals, title=title, **jitter_kwargs)
