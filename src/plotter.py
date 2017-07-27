@@ -2,13 +2,13 @@
 Author: Joseph Min (kmin@caltech.edu)
 
 This script is used to plot graphs of a given dataset.
-It calls functions from expression_plotter_mt to determine significance.
+It calls functions from analyzer to determine significance.
 """
 
 import numpy as np
 import pandas as pd
 import numba
-import expression_plotter_mt as mt
+import analyzer as ana
 
 # Graphics
 import matplotlib as mpl
@@ -35,43 +35,27 @@ mpl.rcParams['xtick.labelsize'] = 16
 mpl.rcParams['ytick.labelsize'] = 16
 mpl.rcParams['legend.fontsize'] = 14
 
-# TODO: one-vs-all heatmap has very long axis -- need to fix
-def plot_heatmap(df, by, which, threshold, f=np.mean, **kwargs):
+def plot_heatmap(df, vals, by, which, threshold, f=np.mean, **kwargs):
     """
     Plots heatmap of q values. Saves graph.
 
     Params:
     df        --- (pandas.DataFrame) data read from csv
+    vals   --- (pandas.DataFrame) calculated p/q values
     by        --- (String) which label to sort
     which     --- (str) which column to perform comparison
     threshold --- (float) q value threshold
     f         --- (function) to calculate deltas (default: np.mean)
 
     kwargs:
-    s      --- (boolean) whether to save p/q value matrix (if not given) to csv
-                        (default: False)
-    fname  --- (str) output matrix filename
     title  --- (str) plot title
     xlabel --- (str) x label
     ylabel --- (str) y label
-    vals --- (pandas.DataFrame) calculated p/q values
-                    (performs bootstraps for q values if not given)
-    n    --- (int) # of bootstraps (default: 10^4)
     """
     # organize kwargs
-    s = kwargs.pop('s', False)
-    fname = kwargs.pop('fname', None)
     title = kwargs.pop('title', 'title')
     xlabel = kwargs.pop('xlabel', 'xlabel')
     ylabel = kwargs.pop('ylabel', 'ylabel')
-    n = kwargs.pop('n', 10**4)
-
-    # gate for p/q values
-    if 'vals' in kwargs:
-        vals = kwargs.pop('vals')
-    else:
-        vals = mt.calculate_pvalues(df, by, which, n, f, s=s, fname=fname)
-        vals = mt.calculate_qvalues(vals, s=s, fname=fname)
 
     ################################
     # begin plotting
@@ -126,13 +110,13 @@ def plot_heatmap(df, by, which, threshold, f=np.mean, **kwargs):
     # end plotting
     ###########################
 
-# TODO: color-code significant boxes instead of using asterisks
-def plot_boxplot(df, control, by, which, threshold, f=np.mean, **kwargs):
+def plot_boxplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs):
     """
     Plot a boxplot.
 
     Params:
     df        --- (pandas.DataFrame) data read from csv
+    vals   --- (pandas.DataFrame) calculated p/q values
     control   --- (str) control
     by        --- (str) index to group by
     which     --- (str) column to perform analysis
@@ -140,32 +124,18 @@ def plot_boxplot(df, control, by, which, threshold, f=np.mean, **kwargs):
     f         --- (function) to calculate delta (default: np.mean)
 
     kwargs:
-    s      --- (boolean) whether to save p/q matrix (if not given) to csv
-                        (default: False)
-    fname  --- (str) output matrix filename
     title  --- (str) plot title
     xlabel --- (str) x label
     ylabel --- (str) y label
     vals --- (pandas.DataFrame) calculated p/q values
                     (performs bootstraps for q values if not given)
-    n    --- (int) # of bootstraps (default: 10^4)
     """
-    s = kwargs.pop('s', False)
-    fname = kwargs.pop('fname', None)
     title = kwargs.pop('title', 'title')
     xlabel = kwargs.pop('xlabel', 'xlabel')
     ylabel = kwargs.pop('ylabel', 'ylabel')
-    n = kwargs.pop('n', 10**4)
-
-    # gate for p/q values
-    if 'vals' in kwargs:
-        vals = kwargs.pop('vals')
-    else:
-        vals = mt.calculate_pvalues(df, by, which, n, f, s=s, fname=fname)
-        vals = mt.calculate_qvalues(vals, s=s, fname=fname)
 
     # dataframe with mapped significance
-    df2 = mt.get_signifcance(df, vals, control, by, which, threshold, f=f)
+    df2 = ana.get_signifcance(df, vals, control, by, which, threshold, f=f)
 
     fig = plt.figure('boxplot_{}'.format(which))
     ax = sns.boxplot(x=which, y=by, data=df2, **kwargs)
@@ -217,12 +187,13 @@ def plot_boxplot(df, control, by, which, threshold, f=np.mean, **kwargs):
     plt.savefig(which + '_box.png', dpi=300, bbox_inches='tight')
 
 
-def plot_jitterplot(df, control, by, which, threshold, f=np.mean, **kwargs):
+def plot_jitterplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs):
     """
     Plot a stripplot ordered by the mean value of each group.
 
     Params:
     df        --- (pandas.DataFrame) data read from csv
+    vals   --- (pandas.DataFrame) calculated p/q values
     control   --- (str) control
     by        --- (str) index to group by
     which     --- (str) column to perform analysis
@@ -230,37 +201,17 @@ def plot_jitterplot(df, control, by, which, threshold, f=np.mean, **kwargs):
     f         --- (function) to calculate delta (default: np.mean)
 
     kwargs:
-    s      --- (boolean) whether to save p/q matrix (if not given) to csv
-                        (default: False)
-    fname  --- (str) output matrix filename
     title  --- (str) plot title
     xlabel --- (str) x label
     ylabel --- (str) y label
-    vals   --- (pandas.DataFrame) calculated p/q values
-                    (performs bootstraps for q values if not given)
-    n      --- (int) # of bootstraps (default: 10^4)
+
     """
-    s = kwargs.pop('s', False)
-    fname = kwargs.pop('fname', None)
     title = kwargs.pop('title', 'title')
     xlabel = kwargs.pop('xlabel', 'xlabel')
     ylabel = kwargs.pop('ylabel', 'ylabel')
-    n = kwargs.pop('n', 10**4)
 
-    # pop() causes the second argument to be calculated again for some reason,
-    # even when 'p_vals' is in kwargs
-    # p_vals = kwargs.pop('p_vals',
-    #                         mt.calculate_pairwise_pvalues(df, by, which, n, f))
-
-    # messy alternative to pop() bug(?)
-    # gate for p/q values
-    if 'vals' in kwargs:
-        vals = kwargs.pop('vals')
-    else:
-        vals = mt.calculate_pvalues(df, by, which, n, f, s=s, fname=fname)
-        vals = mt.calculate_qvalues(vals, s=s, fname=fname)
-
-    df2 = mt.get_signifcance(df, vals, control, by, which, threshold, f=f)
+    # dataframe with mapped significance
+    df2 = ana.get_signifcance(df, vals, control, by, which, threshold, f=f)
 
     # plot figure
     fig = plt.figure('jitterplot_{}'.format(which))
@@ -381,10 +332,10 @@ if __name__ == '__main__':
             ova_ctrl = None
 
         # calculate bootstraps
-        p_vals = mt.calculate_pvalues(df, by, m, n, f=f, s=s,
+        p_vals = ana.calculate_pvalues(df, by, m, n, f=f, s=s,
                                             fname='{}_p'.format(m), ctrl=ova_ctrl)
         p_vals = p_vals.astype(float)
-        q_vals = mt.calculate_qvalues(p_vals, s=s, fname='{}_q'.format(m))
+        q_vals = ana.calculate_qvalues(p_vals, s=s, fname='{}_q'.format(m))
 
         palette = {'sig': 'red',
                     'non-sig': 'grey',
@@ -398,9 +349,9 @@ if __name__ == '__main__':
 
 
         if plot_type == 'heatmap':
-            plot_heatmap(df, by, m, t, f=f, vals=q_vals, title=title)
+            plot_heatmap(df, q_vals, by, m, t, f=f, title=title)
         elif plot_type == 'box':
-            plot_boxplot(df, ctrl, by, m, t, f=f, vals=q_vals, title=title, **boxplot_kwargs)
+            plot_boxplot(df, q_vals, ctrl, by, m, t, f=f, title=title, **boxplot_kwargs)
         elif plot_type == 'jitter':
             # print warning if any measurement has >100 datapoints
             count = df.groupby(by)[m].size().max()
@@ -408,8 +359,8 @@ if __name__ == '__main__':
                 print('\n#There are more than 100 observations for some measurements!')
                 print('#Boxplots are recommended over jitterplots in favor of visibility.\n')
 
-            plot_jitterplot(df, ctrl, by, m, t, f=f, vals=q_vals, title=title, **jitter_kwargs)
+            plot_jitterplot(df, q_vals, ctrl, by, m, t, f=f, title=title, **jitter_kwargs)
         elif plot_type == 'all':
-            plot_heatmap(df, by, m, t, f=f, vals=q_vals, title=title)
-            plot_boxplot(df, ctrl, by, m, t, f=f, vals=q_vals, title=title, **boxplot_kwargs)
-            plot_jitterplot(df, ctrl, by, m, t, f=f, vals=q_vals, title=title, **jitter_kwargs)
+            plot_heatmap(df, q_vals, by, m, t, f=f, title=title)
+            plot_boxplot(df, q_vals, ctrl, by, m, t, f=f, title=title, **boxplot_kwargs)
+            plot_jitterplot(df, q_vals, ctrl, by, m, t, f=f, title=title, **jitter_kwargs)
