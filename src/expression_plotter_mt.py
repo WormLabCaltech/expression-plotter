@@ -404,9 +404,10 @@ def save_matrix(matrix, fname):
     # convert to tidy format if matrix has more than one column
     if len(matrix.reset_index().keys()) > 2:
         tidy = matrix.reset_index()
-        tidy.rename(columns={'index': 'name_1'}, inplace=True)
-        tidy = pd.melt(tidy, id_vars='name_1', var_name="name_2", value_name="p")
+        tidy.rename(columns={'index': 'col_1'}, inplace=True)
+        tidy = pd.melt(tidy, id_vars='col_1', var_name="col_2", value_name="val")
         tidy = tidy.dropna()
+        tidy.set_index('col_1', inplace=True) # prevent row index from being printed
 
         tidy.to_csv('{}_tidy.csv'.format(fname))
 
