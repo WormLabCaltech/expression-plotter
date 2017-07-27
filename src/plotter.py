@@ -105,7 +105,7 @@ def plot_heatmap(df, vals, by, which, threshold, f=np.mean, **kwargs):
     plt.xticks(rotation=45)
 
     print('#Plotting heatmap')
-    plt.savefig(which + '_heatmap.png', dpi=300, bbox_inches='tight')
+    plt.savefig(which + '_heatmap.svg', bbox_inches='tight')
     #
     # end plotting
     ###########################
@@ -184,7 +184,7 @@ def plot_boxplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs):
     #         count += 1
 
     print('#Plotting boxplot')
-    plt.savefig(which + '_box.png', dpi=300, bbox_inches='tight')
+    plt.savefig(which + '_box.svg', bbox_inches='tight')
 
 
 def plot_jitterplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs):
@@ -227,7 +227,7 @@ def plot_jitterplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs
     ax.yaxis.grid(False)
 
     print('#Plotting jitterplot')
-    plt.savefig(which + '_jitter.png', dpi=300, bbox_inches='tight')
+    plt.savefig(which + '_jitter.svg', bbox_inches='tight')
 
 if __name__ == '__main__':
     import argparse
