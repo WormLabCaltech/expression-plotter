@@ -42,7 +42,6 @@ def bootstrap_deltas(x, y, n, f=np.mean):
         delta = np.zeros(n)
 
         # go through the bootstrap
-        # TODO: I'm fairly sure code below can be vectorized
 
         # for each n
         for i in np.arange(n):
@@ -114,9 +113,6 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
     # if no control is given, perform all pairwise comparisons
     if ctrl == None:
         for pair in it.combinations(genotypes, 2):
-            # observed delta & bootstrapped deltas
-            # delta, delta_array = calculate_delta(matrix[pair[0]], matrix[pair[1]],\
-                                                    #bootstraps)
 
             thread = threading.Thread(target=calculate_delta_queue,\
                                     args=(matrix, pair[0], pair[1], n, qu))
@@ -138,14 +134,6 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
             thread.setDaemon(True)
             thread.start()
 
-
-
-    # threads = [threading.Thread(target=calculate_delta, args=(matrix[pair[0]],\
-    #                                 matrix[pair[1]], bootstraps, qu)) for pair in pairs]
-
-    # for thread in threads:
-    #     print('Starting ' + str(thread))
-    #     thread.start()
     for thread in threads:
         gene_1, gene_2, delta_obs, deltas_bootstrapped = qu.get()
         p_vals[gene_1][gene_2] = calculate_pvalue(delta_obs, deltas_bootstrapped)
@@ -260,7 +248,7 @@ def make_empty_dataframe(rows, cols, row_labels, col_labels):
 
     return matrix
 
-def calculate_qvalues(p_vals, **kwargs): # save=False, title=None):
+def calculate_qvalues(p_vals, **kwargs):
     """
     Calculates the q values.
     This function calls benjamin_hochberg_stepup()
@@ -500,5 +488,5 @@ if __name__ == '__main__':
         # plot qvalues
         plot_qvalue_heatmaps(q_vals, threshold, n, measurement, title=title)
         #
-        # # plot boxplot
+        # # plot boxplot -- plotting functionality moved to plotter.py
         # plot_boxplot(df_data, threshold, title=title)
