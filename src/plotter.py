@@ -51,6 +51,8 @@ def plot_heatmap(df, vals, by, which, threshold, f=np.mean, **kwargs):
     title  --- (str) plot title
     xlabel --- (str) x label
     ylabel --- (str) y label
+
+    Returns: none
     """
     # organize kwargs
     title = kwargs.pop('title', 'title')
@@ -127,8 +129,8 @@ def plot_boxplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs):
     title  --- (str) plot title
     xlabel --- (str) x label
     ylabel --- (str) y label
-    vals --- (pandas.DataFrame) calculated p/q values
-                    (performs bootstraps for q values if not given)
+
+    Returns: none
     """
     title = kwargs.pop('title', 'title')
     xlabel = kwargs.pop('xlabel', 'xlabel')
@@ -205,6 +207,7 @@ def plot_jitterplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs
     xlabel --- (str) x label
     ylabel --- (str) y label
 
+    Returns: none
     """
     title = kwargs.pop('title', 'title')
     xlabel = kwargs.pop('xlabel', 'xlabel')

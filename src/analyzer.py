@@ -188,7 +188,7 @@ def calculate_delta(x, y, n, f=np.mean):
 
     return delta_obs, deltas_bootstrapped
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, nogil=True)
 def calculate_pvalue(delta, delta_array):
     """
     Calculates the pvalue of one observation.
@@ -294,7 +294,7 @@ def calculate_qvalues(p_vals, **kwargs):
 
     return q_vals
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, nogil=True)
 def benjamin_hochberg_stepup(p_vals):
     """
     Given a list of p-values, apply FDR correction and return the q values.
@@ -303,7 +303,8 @@ def benjamin_hochberg_stepup(p_vals):
     p_vals --- (list-like) p values (must be 1d)
 
     Returns:
-    q_vals --- (list-like) q values
+    q_vals_sorted --- (np.array) q values
+    idx_no_nan    --- (np.array) indices of q values
     """
     # sorted pvalues with respective original idices
     sort = np.sort(p_vals)
@@ -341,6 +342,9 @@ def get_signifcance(df, vals, control, by, which, threshold, f=np.mean):
     which     --- (str) column to perform analysis
     threshold --- (float) p value threshold
     f         --- (function) to calculate statistic (default: np.mean)
+
+    Returns:
+    df2 --- (pandas.DataFrame) with mapped significance according to vals
     """
     df = df.copy() # need to operate on copy -- shouldn't change original matrix
 
@@ -374,16 +378,21 @@ def get_signifcance(df, vals, control, by, which, threshold, f=np.mean):
 
     return df2
 
-def save_matrix(matrix, fname):
+def save_matrix(matrix, fname, replace=None):
     """
     Saves the matrix in both 2d and tidy csv format.
 
     Params:
-    matrix --- (pandas.DataFrame) matrix to be saved
-    fname  --- (str) output csv filename
+    matrix  --- (pandas.DataFrame) matrix to be saved
+    fname   --- (str) output csv filename
+    replace --- (str) value to replace 0.0 values
 
     Returns: none
     """
+    # replace values
+    if not replace == None:
+        matrix = matrix.replace(0, replace)
+
     matrix = matrix.dropna(how='all', axis=0)
     matrix = matrix.dropna(how='all', axis=1)
 
