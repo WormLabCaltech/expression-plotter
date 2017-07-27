@@ -56,8 +56,8 @@ def plot_heatmap(df, vals, by, which, threshold, f=np.mean, **kwargs):
     """
     # organize kwargs
     title = kwargs.pop('title', 'title')
-    xlabel = kwargs.pop('xlabel', 'xlabel')
-    ylabel = kwargs.pop('ylabel', 'ylabel')
+    xlabel = kwargs.pop('xlabel', by)
+    ylabel = kwargs.pop('ylabel', by)
 
     ################################
     # begin plotting
@@ -129,12 +129,14 @@ def plot_boxplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs):
     title  --- (str) plot title
     xlabel --- (str) x label
     ylabel --- (str) y label
+    slabel --- (str) constrol statistic label
 
     Returns: none
     """
     title = kwargs.pop('title', 'title')
-    xlabel = kwargs.pop('xlabel', 'xlabel')
-    ylabel = kwargs.pop('ylabel', 'ylabel')
+    xlabel = kwargs.pop('xlabel', which)
+    ylabel = kwargs.pop('ylabel', by)
+    slabel = kwargs.pop('slabel', 'control statistic')
 
     # dataframe with mapped significance
     df2 = ana.get_signifcance(df, vals, control, by, which, threshold, f=f)
@@ -142,11 +144,13 @@ def plot_boxplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs):
     fig = plt.figure('boxplot_{}'.format(which))
     ax = sns.boxplot(x=which, y=by, data=df2, **kwargs)
     plt.axvline(f(df2[df2[by] == control][which]), ls='--', color='blue',\
-                                                lw=1, label='control statistic')
+                                                lw=1, label=slabel)
 
     # fig.suptitle(title, fontsize=20)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
+
+    plt.legend()
 
     # 7/27/2017 remove significance bars in favor of significance colors
     # # modify data to plot siginificance bars
@@ -206,12 +210,14 @@ def plot_jitterplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs
     title  --- (str) plot title
     xlabel --- (str) x label
     ylabel --- (str) y label
+    slabel --- (str) control statistic label
 
     Returns: none
     """
     title = kwargs.pop('title', 'title')
-    xlabel = kwargs.pop('xlabel', 'xlabel')
-    ylabel = kwargs.pop('ylabel', 'ylabel')
+    xlabel = kwargs.pop('xlabel', which)
+    ylabel = kwargs.pop('ylabel', by)
+    slabel = kwargs.pop('slabel', 'control statistic')
 
     # dataframe with mapped significance
     df2 = ana.get_signifcance(df, vals, control, by, which, threshold, f=f)
@@ -220,9 +226,9 @@ def plot_jitterplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs
     fig = plt.figure('jitterplot_{}'.format(which))
     ax = sns.stripplot(x=which, y=by, data=df2, **kwargs)
     plt.axvline(f(df2[df2[by] == control][which]), ls='--', color='blue',\
-                                                lw=1, label='control statistic')
+                                                lw=1, label=slabel)
 
-    fig.suptitle(title, fontsize=20)
+    # fig.suptitle(title, fontsize=20)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
 
@@ -323,22 +329,23 @@ if __name__ == '__main__':
         ctrl = df[by][0]
         print('#\tInferred as \'{}\' from data\n'.format(ctrl))
 
-    for m in df:
-        if m == by:
+    for which in df:
+        if which == by:
             continue
 
-        print('\n####### Performing analysis on {}. #######'.format(m))
+        print('\n####### Performing analysis on {}. #######'.format(which))
 
         if ova:
             ova_ctrl = ctrl
         else:
             ova_ctrl = None
+        slabel = 'control {}'.format(args.m)
 
         # calculate bootstraps
-        p_vals = ana.calculate_pvalues(df, by, m, n, f=f, s=s,
-                                            fname='{}_p'.format(m), ctrl=ova_ctrl)
+        p_vals = ana.calculate_pvalues(df, by, which, n, f=f, s=s,
+                                            fname='{}_p'.format(which), ctrl=ova_ctrl)
         p_vals = p_vals.astype(float)
-        q_vals = ana.calculate_qvalues(p_vals, s=s, fname='{}_q'.format(m))
+        q_vals = ana.calculate_qvalues(p_vals, s=s, fname='{}_q'.format(which))
 
         palette = {'sig': 'red',
                     'non-sig': 'grey',
@@ -352,18 +359,18 @@ if __name__ == '__main__':
 
 
         if plot_type == 'heatmap':
-            plot_heatmap(df, q_vals, by, m, t, f=f, title=title)
+            plot_heatmap(df, q_vals, by, which, t, f=f)
         elif plot_type == 'box':
-            plot_boxplot(df, q_vals, ctrl, by, m, t, f=f, title=title, **boxplot_kwargs)
+            plot_boxplot(df, q_vals, ctrl, by, which, t, f=f, slabel=slabel, **boxplot_kwargs)
         elif plot_type == 'jitter':
             # print warning if any measurement has >100 datapoints
-            count = df.groupby(by)[m].size().max()
+            count = df.groupby(by)[which].size().max()
             if count > 100:
                 print('\n#There are more than 100 observations for some measurements!')
                 print('#Boxplots are recommended over jitterplots in favor of visibility.\n')
 
-            plot_jitterplot(df, q_vals, ctrl, by, m, t, f=f, title=title, **jitter_kwargs)
+            plot_jitterplot(df, q_vals, ctrl, by, which, t, f=f, slabel=slabel, **jitter_kwargs)
         elif plot_type == 'all':
-            plot_heatmap(df, q_vals, by, m, t, f=f, title=title)
-            plot_boxplot(df, q_vals, ctrl, by, m, t, f=f, title=title, **boxplot_kwargs)
-            plot_jitterplot(df, q_vals, ctrl, by, m, t, f=f, title=title, **jitter_kwargs)
+            plot_heatmap(df, q_vals, by, which, t, f=f)
+            plot_boxplot(df, q_vals, ctrl, by, which, t, f=f, slabel=slabel, **boxplot_kwargs)
+            plot_jitterplot(df, q_vals, ctrl, by, which, t, f=f, slabel=slabel, **jitter_kwargs)
