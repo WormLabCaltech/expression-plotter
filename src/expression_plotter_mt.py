@@ -1,5 +1,8 @@
 """
-TODO: simplify & organize code -- use **kwargs for functions with multiple args
+Author: Joseph Min (kmin@caltech.edu)
+
+This script is used to calculate the p and q values of a given dataset.
+Bootstraps are multithreaded and numbaized for decreased computation time.
 """
 
 import pandas as pd
@@ -147,14 +150,14 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
         gene_1, gene_2, delta_obs, deltas_bootstrapped = qu.get()
         p_vals[gene_1][gene_2] = calculate_pvalue(delta_obs, deltas_bootstrapped)
 
-    print('\n#Bootstrapping of {} threads complete.'.format(len(threads)))
+    print('#Bootstrapping of {} threads complete.\n'.format(len(threads)))
 
-    print('\n#P-value matrix:')
+    print('#P-value matrix:')
     print(p_vals)
 
     # save matrix to csv
     if s:
-        print('#Saving p-value matrix')
+        print('#Saving p-value matrix\n')
         save_matrix(p_vals, fname)
 
     return p_vals
@@ -293,12 +296,12 @@ def calculate_qvalues(p_vals, **kwargs): # save=False, title=None):
     # construct pandas dataframe from data and labels
     q_vals = pd.DataFrame(data=q_vals, index=labels, columns=labels)
 
-    print('\n#Q-value matrix:')
+    print('#Q-value matrix:')
     print(q_vals)
 
     # save matrix to csv
     if s:
-        print('#Saving q-value matrix')
+        print('#Saving q-value matrix\n')
         save_matrix(q_vals, fname)
 
     return q_vals
@@ -337,6 +340,51 @@ def benjamin_hochberg_stepup(p_vals):
     # end BH step up
 
     return q_vals_sorted, idx_no_nan
+
+def get_signifcance(df, vals, control, by, which, threshold, f=np.mean):
+    """
+    Maps significance and statistics to dataframe.
+
+    Params:
+    df        --- (pandas.DataFrame) data read from csv
+    vals      --- (pandas.DataFrame) p/q values
+    control   --- (str) control
+    by        --- (str) index to group by
+    which     --- (str) column to perform analysis
+    threshold --- (float) p value threshold
+    f         --- (function) to calculate statistic (default: np.mean)
+    """
+    df = df.copy() # need to operate on copy -- shouldn't change original matrix
+
+    grouped = df.groupby(by) # dataframe grouped by index
+
+    df_control = df[df[by] == control][which].values
+    sig = {} # hash to store significance
+    sig[control] = 'control'
+    stat = {} # hash to store statistics
+
+    for name, group in grouped:
+        stat[name] = f(group[which])
+
+        if not name == control:
+            # assign correct p value (not nan)
+            p = vals[control][name]
+            if np.isnan(p):
+                p = vals[name][control]
+
+            if p < threshold:
+                sig[name] = 'sig'
+            else:
+                sig[name] = 'non-sig'
+
+    df['sig'] = df[by].map(sig)
+
+    # sort by statistic
+    df2 = df.copy()
+    df2['stat'] = df2[by].map(stat)
+    df2.sort_values('stat', inplace=True)
+
+    return df2
 
 def save_matrix(matrix, fname):
     """
