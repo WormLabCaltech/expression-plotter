@@ -242,7 +242,7 @@ if __name__ == '__main__':
     import argparse
     import os
 
-    n = 100
+    n = 10**4
     qval = 0.05
     stat = 'mean'
     fs = {'mean': np.mean,
@@ -273,7 +273,7 @@ if __name__ == '__main__':
                         type=float,
                         default=0.05)
     parser.add_argument('-i',
-                        help='Label to group measurements by. \
+                        help='Column to group measurements by. \
                         (defaults to first column of the csv file)',
                         type=str,
                         default=None)
@@ -282,7 +282,7 @@ if __name__ == '__main__':
                         (defaults to first genotype in csv file)',
                         type=str,
                         default=None)
-    parser.add_argument('-m',
+    parser.add_argument('-s',
                         help='Statistic to perform bootstraps. \
                         (default: {})'.format(stat),
                         type=str,
@@ -301,7 +301,7 @@ if __name__ == '__main__':
     plot_type = args.type
     title = args.title
     n = args.b
-    f = fs[args.m]
+    f = fs[args.s]
     t = args.q
     by = args.i
     ctrl = args.c
@@ -319,12 +319,12 @@ if __name__ == '__main__':
         os.chdir(path)
 
     # infer groupby and controls
-    if by == None:
+    if by is None:
         print('##No groupby argument given.')
         by = df.keys()[0]
         print('#\tInferred as \'{}\' from data.\n'.format(by))
 
-    if ctrl == None:
+    if ctrl is None:
         print('##No control given.')
         ctrl = df[by][0]
         print('#\tInferred as \'{}\' from data\n'.format(ctrl))
@@ -339,7 +339,7 @@ if __name__ == '__main__':
             ova_ctrl = ctrl
         else:
             ova_ctrl = None
-        slabel = 'control {}'.format(args.m)
+        slabel = 'control {}'.format(args.s)
 
         # calculate bootstraps
         p_vals = ana.calculate_pvalues(df, by, which, n, f=f, s=s,

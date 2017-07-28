@@ -20,7 +20,7 @@ def bootstrap_deltas(x, y, n, f=np.mean):
     f    --- (function) to calculate deltas
 
     Returns:
-    delta -- a 1d array of length `n'
+    deltas -- a 1d array of length `n'
     """
     # get lengths
     nx = len(x)
@@ -39,7 +39,7 @@ def bootstrap_deltas(x, y, n, f=np.mean):
         Calculates difference based on function f.
         """
         # initialize a delta vector to store everything in
-        delta = np.zeros(n)
+        deltas = np.zeros(n)
 
         # go through the bootstrap
 
@@ -51,16 +51,16 @@ def bootstrap_deltas(x, y, n, f=np.mean):
             nully = np.random.choice(mixed, ny, replace=True)
 
             # calculate the difference of their means
-            diff = f(nully) - f(nullx)
+            delta = f(nully) - f(nullx)
 
             # store
-            delta[i] = diff
+            deltas[i] = delta
 
-        return delta
+        return deltas
 
-    delta = difference(x, y, n)
+    deltas = difference(x, y, n)
 
-    return delta
+    return deltas
 
 def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
     """
@@ -77,6 +77,7 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
     kwargs:
     s     --- (boolean) whether to save matrix to csv (default: False)
     fname --- (str) csv file name
+    ctrl  --- (str) control
 
     Returns:
     p_vals --- (pandas.DataFrame) of pairwise p values
@@ -111,10 +112,10 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
     # for loop to iterate through all pairwise comparisons (not permutation)
     print('#Starting threads for bootstrapping...')
     # if no control is given, perform all pairwise comparisons
-    if ctrl == None:
+    if ctrl is None:
         for pair in it.combinations(genotypes, 2):
 
-            thread = threading.Thread(target=calculate_delta_queue,\
+            thread = threading.Thread(target=calculate_deltas_queue,\
                                     args=(matrix, pair[0], pair[1], n, qu))
             threads.append(thread)
 
@@ -127,7 +128,7 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
             if genotype == ctrl:
                 continue
 
-            thread = threading.Thread(target=calculate_delta_queue,
+            thread = threading.Thread(target=calculate_deltas_queue,
                                     args=(matrix, ctrl, genotype, n, qu))
             threads.append(thread)
 
@@ -148,15 +149,15 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
         print('#Saving p-value matrix\n')
         save_matrix(p_vals, fname)
 
-    return p_vals
+    return p_vals.astype(float)
 
-def calculate_delta_queue(matrix, gene_1, gene_2, n, queue, f=np.mean):
+def calculate_deltas_queue(matrix, gene_1, gene_2, n, queue, f=np.mean):
     """
     Function to calculate deltas with multithreading.
     Saves p values as tuples in queue.
 
     Params:
-    matrix         --- (pandas.DataFrame) data read from csv
+    matrix         --- (pandas.DataFrame) grouped data
     gene_1, gene_2 --- (String) genotypes to be compared
     n              --- (int) # of bootstraps
     queue          --- (queue.Queue) queue to save results
@@ -164,12 +165,12 @@ def calculate_delta_queue(matrix, gene_1, gene_2, n, queue, f=np.mean):
 
     Returns: none
     """
-    delta_obs, deltas_bootstrapped = calculate_delta(matrix[gene_1],\
+    delta_obs, deltas_bootstrapped = calculate_deltas(matrix[gene_1],\
                                                     matrix[gene_2], n)
 
     queue.put((gene_1, gene_2, delta_obs, deltas_bootstrapped))
 
-def calculate_delta(x, y, n, f=np.mean):
+def calculate_deltas(x, y, n, f=np.mean):
     """
     Calculates the observed and bootstrapped deltas.
     This function calls bootstrap_deltas()
@@ -413,8 +414,10 @@ if __name__ == '__main__':
     import argparse
     import os
 
-    n = 100
-    qval = 0.05
+    n = 10**4
+    stat = 'mean'
+    fs = {'mean': np.mean,
+            'median': np.median}
 
     parser = argparse.ArgumentParser(description='Run data anlysis \
                                         and plot boxplot.')
@@ -431,17 +434,12 @@ if __name__ == '__main__':
                         (default: {0})'.format(n),
                         type=int,
                         default=100)
-    parser.add_argument('-q',
-                        help='Q value threshold for significance. \
-                        (default: {0})'.format(qval),
-                        type=float,
-                        default=0.05)
     parser.add_argument('-i',
-                        help='Label to group measurements by. \
+                        help='Column to group measurements by. \
                         (defaults to first element of the csv file)',
                         type=str,
                         default=None)
-    parser.add_argument('-s',
+    parser.add_argument('--save',
                         help='Save data to csv.',
                         action='store_true')
     # end command line arguments
@@ -450,9 +448,8 @@ if __name__ == '__main__':
     csv_path = args.csv_data
     title = args.title
     n = args.b
-    threshold = args.q
     by = args.i
-    save = args.s
+    s = args.save
 
     # change directory to title
     os.chdir(title)
@@ -461,6 +458,14 @@ if __name__ == '__main__':
 
     if by == None:
         by = df.keys()[0]
+
+    # set directory to title
+    path = './{}'.format(title)
+    if os.path.exists(path):
+        os.chdir(path)
+    else:
+        os.mkdir(path)
+        os.chdir(path)
 
     # 7/18/2017 replaced
     # genotypes = np.unique(df_data['Genotype']) # get unique genotypes
@@ -495,7 +500,7 @@ if __name__ == '__main__':
         q_vals = calculate_qvalues(p_vals, save=s)
         #
         # plot qvalues
-        plot_qvalue_heatmaps(q_vals, threshold, n, measurement, title=title)
+        # plot_qvalue_heatmaps(q_vals, threshold, n, measurement, title=title)
         #
         # # plot boxplot -- plotting functionality moved to plotter.py
         # plot_boxplot(df_data, threshold, title=title)
