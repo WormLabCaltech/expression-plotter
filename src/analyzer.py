@@ -214,7 +214,7 @@ def calculate_pvalue(delta, delta_array):
         p = 0.0
     else:
         # number of points to the right of observed delta
-        if delta > 0:
+        if delta >= 0:
             length = len(delta_array[delta_array >= delta])
             total_length = len(delta_array)
             p = length / total_length
