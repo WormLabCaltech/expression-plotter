@@ -6,7 +6,7 @@ import threading
 import itertools as it
 import analyzer as ana
 
-def calculate_pvalues(df, blabel, tlabel, clabel, n, f=np.mean **kwargs):
+def calculate_pvalues(df, blabel, tlabel, clabel, n, f=np.mean, **kwargs):
     """
     Calculates the p value of the sample.
 
@@ -72,6 +72,7 @@ def calculate_pvalues(df, blabel, tlabel, clabel, n, f=np.mean **kwargs):
 
     print('#P-value matrix:')
     print(p_vals)
+    print()
 
     # save matrix to csv
     if s:
@@ -120,70 +121,151 @@ def calculate_deltas(ts_1, cs_1, ts_2, cs_2, n, f=np.mean):
     Returns:
     """
     # calculate observed delta
-    mean_1 = f(cs_1 / ts_1)
-    mean_2 = f(cs_2 / ts_2)
-    delta_obs = mean_2 - mean_1
+    stat_1 = f(cs_1 / ts_1)
+    stat_2 = f(cs_2 / ts_2)
+    delta_obs = stat_2 - stat_1
 
     deltas_bootstrapped = bootstrap_deltas(ts_1, cs_1, ts_2, cs_2, n, f)
 
     return delta_obs, deltas_bootstrapped
 
 def bootstrap_deltas(ts_1, cs_1, ts_2, cs_2, n, f=np.mean):
-        """
-        Calculates bootstrapped deltas.
+    """
+    Calculates bootstrapped deltas.
 
-        Params:
-        ts_1 --- (np.array) total samples 1
-        cs_1 --- (np.array) counts 1
-        ts_2 --- (np.array) total samples 2
-        cs_2 --- (np.array) counts 2
-        n    --- (int) # of bootstraps
+    Params:
+    ts_1 --- (np.array) total samples 1
+    cs_1 --- (np.array) counts 1
+    ts_2 --- (np.array) total samples 2
+    cs_2 --- (np.array) counts 2
+    n    --- (int) # of bootstraps
 
-        Returns:
-        deltas --- (np.array) of length n
-        """
-        # total number of samples
-        ts_n = np.sum(ts_1) + np.sum(ts_2)
-        cs_n = np.sum(cs_1) + np.sum(cs_2)
+    Returns:
+    deltas --- (np.array) of length n
+    """
+    # TODO: figure out best algorithm for speed
 
-        # mixed array
-        mixed = np.zeros(ts_n)
-        mixed[0:cs_n] = np.ones(cs_n)
+    # @numba.jit(nopython=True, nogil=True)
+    # def bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n):
+    #     p = (np.sum(cs_1) + np.sum(cs_2)) / (np.sum(ts_1) + np.sum(ts_2))
+    #
+    #     deltas = np.zeros(n)
+    #     for i in np.arange(n):
+    #         # for each plate 1
+    #         nullps_1 = np.zeros(len(ts_1))
+    #         for j in np.arange(len(ts_1)):
+    #             nullps_1[j] = np.random.binomial(ts_1[j], p) / ts_1[j]
+    #         nullms_1 = np.mean(nullps_1)
+    #
+    #         # for each plate 2
+    #         nullps_2 = np.zeros(len(ts_2))
+    #         for j in np.arange(len(ts_2)):
+    #             nullps_2[j] = np.random.binomial(ts_2[j], p) / ts_2[j]
+    #         nullms_2 = np.mean(nullps_2)
+    #
+    #         deltas[i] = nullms_2 - nullms_1
+    #
+    #     return deltas
 
-        # function to be numbaized
-        @numba.jit(nopython=True, nogil=True)
-        def difference(ts_1, cs_1, ts_2, cs_2, n):
-            """
-            Calculates delta based on function f.
-            """
+    # def bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n):
+    #     p = (np.sum(cs_1) + np.sum(cs_2)) / (np.sum(ts_1) + np.sum(ts_2))
+    #     nullps_1 = np.zeros((len(ts_1), n))  # initialize blank array for sums
+    #     # for each plate 1
+    #     for i in np.arange(len(ts_1)):
+    #         nullps_1[i,:] = np.random.binomial(ts_1[i], p, n) / ts_1[i]
+    #     # find mean of plate 1
+    #     nullms_1 = np.mean(nullps_1, axis=0)
+    #
+    #     nullps_2 = np.zeros((len(ts_2), n))  # initialize blank array for sums
+    #     # for each plate 2
+    #     for i in np.arange(len(ts_2)):
+    #         nullps_2[i,:] = np.random.binomial(ts_2[i], p, n) / ts_2[i]
+    #     # find mean of plate 2
+    #     nullms_2 = np.mean(nullps_2, axis=0)
+    #
+    #     # find deltas
+    #     deltas = nullms_2 - nullms_1
+    #
+    #     return deltas
 
-            # initialize deltas array
-            deltas = np.zeros(n)
+    # 7/31/2017 This is a vectorized function, but numba does not support
+    #           np.split and np.repeat
+    # def bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n):
+    #     # total probablity with labels removed
+    #     p = (np.sum(cs_1) + np.sum(cs_2)) / (np.sum(ts_1) + np.sum(ts_2))
+    #
+    #     # vectorized bootstraps
+    #     # make 2D array, each row representing plates, each column a bootstrap
+    #     nullts_1 = np.split(np.repeat(ts_1, n), len(ts_1))
+    #     # calculate binomial picks
+    #     nullcs_1 = np.random.binomial(nullts_1, p)
+    #     # calculate probability by dividing by total sample
+    #     nullps_1 = nullcs_1 / ts_1[:,None]
+    #     # calculate statistic using f
+    #     nullss_1 = f(nullps_1, axis=0)
+    #
+    #     # make 2D array, each row representing plates, each column a bootstrap
+    #     nullts_2 = np.split(np.repeat(ts_2, n), len(ts_2))
+    #     # calculate binomial picks
+    #     nullcs_2 = np.random.binomial(nullts_2, p)
+    #     # calculate probability by dividing by total sample
+    #     nullps_2 = nullcs_2 / ts_2[:,None]
+    #     # calculate statistic using f
+    #     nullss_2 = f(nullps_2, axis=0)
+    #
+    #     deltas = nullss_2 - nullss_1
+    #
+    #     return deltas
 
-            # perform bootstraps
-            # TODO: use np.random.binomial - can it be done without looping n times?
-            for i in np.arange(n):
-                nullp_1 = np.zeros(len(ts_1))
-                nullp_2 = np.zeros(len(ts_2))
+    # deltas = bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n)
+    #
+    # return deltas
 
-                for j in np.arange(len(ts_1)):
-                    nullc = np.sum(np.random.choice(mixed, cs_1[j], replace=True))
-                    nullp_1[j] = nullc / ts_1[j]
 
-                for j in np.arange(len(ts_2)):
-                    nullc = np.sum(np.random.choice(mixed, cs_2[j], replace=True))
-                    nullp_2[j] = nullc / ts_2[j]
 
-                # calculate difference of means
-                delta = f(nullp_2) - f(nullp_1)
-
-                deltas[i] = delta
-
-            return deltas
-
-        deltas = difference(ts_1, cs_1, ts_2, cs_2, n)
-
-        return deltas
+    # # 7/31/2017 vectorized by np.random.binomial
+    # # total number of samples
+    # ts_n = np.sum(ts_1) + np.sum(ts_2)
+    # cs_n = np.sum(cs_1) + np.sum(cs_2)
+    #
+    # # mixed array
+    # mixed = np.zeros(ts_n)
+    # mixed[0:cs_n] = np.ones(cs_n)
+    #
+    # # function to be numbaized
+    # @numba.jit(nopython=True, nogil=True)
+    # def difference(ts_1, cs_1, ts_2, cs_2, n):
+    #     """
+    #     Calculates delta based on function f.
+    #     """
+    #
+    #     # initialize deltas array
+    #     deltas = np.zeros(n)
+    #
+    #     # perform bootstraps
+    #     # TODO: use np.random.binomial - can it be done without looping n times?
+    #     for i in np.arange(n):
+    #         nullp_1 = np.zeros(len(ts_1))
+    #         nullp_2 = np.zeros(len(ts_2))
+    #
+    #         for j in np.arange(len(ts_1)):
+    #             nullc = np.sum(np.random.choice(mixed, cs_1[j], replace=True))
+    #             nullp_1[j] = nullc / ts_1[j]
+    #
+    #         for j in np.arange(len(ts_2)):
+    #             nullc = np.sum(np.random.choice(mixed, cs_2[j], replace=True))
+    #             nullp_2[j] = nullc / ts_2[j]
+    #
+    #         # calculate difference of means
+    #         delta = f(nullp_2) - f(nullp_1)
+    #
+    #         deltas[i] = delta
+    #
+    #     return deltas
+    #
+    # deltas = difference(ts_1, cs_1, ts_2, cs_2, n)
+    #
+    # return deltas
 
 if __name__ == '__main__':
     import argparse
