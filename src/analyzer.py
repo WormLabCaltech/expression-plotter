@@ -11,6 +11,7 @@ import itertools as it
 import numba
 import threading
 import queue
+import concurrent
 
 def bootstrap_deltas(x, y, n, f=np.mean):
     """Given two datasets, return bootstrapped means.
@@ -113,33 +114,40 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
     print('#Starting threads for bootstrapping...')
     # if no control is given, perform all pairwise comparisons
     if ctrl is None:
-        for pair in it.combinations(genotypes, 2):
+        # TODO: housekeeping
+        with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+            fs = [executor.submit(calculate_deltas_queue, matrix, pair[0], pair[1], n) for pair in it.combinations(genotypes, 2)]
+            for f in concurrent.futures.as_completed(fs):
+                gene_1, gene_2, delta_obs, deltas_bootstrapped = f.result()
+                p_vals[gene_1][gene_2] = calculate_pvalue(delta_obs, deltas_bootstrapped)
 
-            thread = threading.Thread(target=calculate_deltas_queue,\
-                                    args=(matrix, pair[0], pair[1], n, qu))
-            threads.append(thread)
-
-            thread.setDaemon(True)
-            thread.start()
+        # for pair in it.combinations(genotypes, 2):
+        #
+        #     thread = threading.Thread(target=calculate_deltas_queue,\
+        #                             args=(matrix, pair[0], pair[1], n, qu))
+        #     threads.append(thread)
+        #
+        #     thread.setDaemon(True)
+        #     thread.start()
 
     # control given
-    else:
-        for genotype in genotypes:
-            if genotype == ctrl:
-                continue
+    # else:
+    #     for genotype in genotypes:
+    #         if genotype == ctrl:
+    #             continue
+    #
+    #         thread = threading.Thread(target=calculate_deltas_queue,
+    #                                 args=(matrix, ctrl, genotype, n, qu))
+    #         threads.append(thread)
+    #
+    #         thread.setDaemon(True)
+    #         thread.start()
 
-            thread = threading.Thread(target=calculate_deltas_queue,
-                                    args=(matrix, ctrl, genotype, n, qu))
-            threads.append(thread)
-
-            thread.setDaemon(True)
-            thread.start()
-
-    for thread in threads:
-        gene_1, gene_2, delta_obs, deltas_bootstrapped = qu.get()
-        p_vals[gene_1][gene_2] = calculate_pvalue(delta_obs, deltas_bootstrapped)
-
-    print('#Bootstrapping of {} threads complete.\n'.format(len(threads)))
+    # for thread in threads:
+    #     gene_1, gene_2, delta_obs, deltas_bootstrapped = qu.get()
+    #     p_vals[gene_1][gene_2] = calculate_pvalue(delta_obs, deltas_bootstrapped)
+    #
+    # print('#Bootstrapping of {} threads complete.\n'.format(len(threads)))
 
     print('#P-value matrix:')
     print(p_vals)
@@ -151,7 +159,7 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
 
     return p_vals.astype(float)
 
-def calculate_deltas_queue(matrix, gene_1, gene_2, n, queue, f=np.mean):
+def calculate_deltas_queue(matrix, gene_1, gene_2, n, f=np.mean):
     """
     Function to calculate deltas with multithreading.
     Saves p values as tuples in queue.
@@ -168,7 +176,8 @@ def calculate_deltas_queue(matrix, gene_1, gene_2, n, queue, f=np.mean):
     delta_obs, deltas_bootstrapped = calculate_deltas(matrix[gene_1],\
                                                     matrix[gene_2], n)
 
-    queue.put((gene_1, gene_2, delta_obs, deltas_bootstrapped))
+    # queue.put((gene_1, gene_2, delta_obs, deltas_bootstrapped))
+    return gene_1, gene_2, delta_obs, deltas_bootstrapped
 
 def calculate_deltas(x, y, n, f=np.mean):
     """
@@ -240,9 +249,10 @@ def make_empty_dataframe(rows, cols, row_labels, col_labels):
     Returns:
     matrix --- (pandas.DataFrame) wanted matrix
     """
-    # make rows x cols zero dataframe
-    matrix = pd.DataFrame(np.zeros((rows, cols)),\
+    # make rows x cols nan dataframe
+    matrix = pd.DataFrame(np.empty((rows, cols)),\
                             dtype='object')
+    matrix[:] = np.nan
     # set column and row indices
     matrix.columns = list(col_labels)
     matrix = matrix.reindex(list(row_labels))
