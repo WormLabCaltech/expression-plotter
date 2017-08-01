@@ -9,9 +9,9 @@ import pandas as pd
 import numpy as np
 import itertools as it
 import numba
-import threading
+import multiprocessing as mp
 import queue
-import concurrent
+import concurrent.futures as fut
 
 def bootstrap_deltas(x, y, n, f=np.mean):
     """Given two datasets, return bootstrapped means.
@@ -107,20 +107,21 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
     p_vals = make_empty_dataframe(len(genotypes),\
             len(genotypes), genotypes, genotypes) # empty pandas dataframe
 
-    threads = []
-    qu = queue.Queue()
+    # 8/1/2017 Replaced with processes
+    # threads = []
+    # qu = queue.Queue()
+
+    cores = mp.cpu_count() # number of available cores
 
     # for loop to iterate through all pairwise comparisons (not permutation)
-    print('#Starting threads for bootstrapping...')
+    print('#{} cores detected for this machine.'.format(cores))
+    print('#Starting {} processes for bootstrapping...'.format(cores))
+    with fut.ProcessPoolExecutor(max_workers=cores) as executor:
     # if no control is given, perform all pairwise comparisons
-    if ctrl is None:
-        # TODO: housekeeping
-        with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
-            fs = [executor.submit(calculate_deltas_queue, matrix, pair[0], pair[1], n) for pair in it.combinations(genotypes, 2)]
-            for f in concurrent.futures.as_completed(fs):
-                gene_1, gene_2, delta_obs, deltas_bootstrapped = f.result()
-                p_vals[gene_1][gene_2] = calculate_pvalue(delta_obs, deltas_bootstrapped)
-
+        if ctrl is None:
+            fs = [executor.submit(calculate_deltas_process, matrix, pair[0],
+                        pair[1], n) for pair in it.combinations(genotypes, 2)]
+        # 8/1/2017 replaced with ProcessPoolExecutor
         # for pair in it.combinations(genotypes, 2):
         #
         #     thread = threading.Thread(target=calculate_deltas_queue,\
@@ -131,6 +132,15 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
         #     thread.start()
 
     # control given
+        else:
+            genotypes.remove(ctrl)
+            fs = [executor.submit(calculate_deltas_process, matrix, ctrl,
+                                genotype, n) for genotype in genotypes]
+
+        # save to matrix
+        for f in fut.as_completed(fs):
+            gene_1, gene_2, delta_obs, deltas_bootstrapped = f.result()
+            p_vals[gene_1][gene_2] = calculate_pvalue(delta_obs, deltas_bootstrapped)
     # else:
     #     for genotype in genotypes:
     #         if genotype == ctrl:
@@ -159,7 +169,7 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
 
     return p_vals.astype(float)
 
-def calculate_deltas_queue(matrix, gene_1, gene_2, n, f=np.mean):
+def calculate_deltas_process(matrix, gene_1, gene_2, n, f=np.mean):
     """
     Function to calculate deltas with multithreading.
     Saves p values as tuples in queue.
