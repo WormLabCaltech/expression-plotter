@@ -5,6 +5,7 @@ import queue
 import threading
 import itertools as it
 import analyzer as ana
+import concurrent.futures
 
 def calculate_pvalues(df, blabel, tlabel, clabel, n, f=np.mean, **kwargs):
     """
@@ -42,31 +43,37 @@ def calculate_pvalues(df, blabel, tlabel, clabel, n, f=np.mean, **kwargs):
     print('#Starting threads for bootstrapping...')
     # if no control is given, perform all pairwise comparisons
     if ctrl is None:
-        for pair in it.combinations(genotypes, 2):
-
-            thread = threading.Thread(target=calculate_deltas_queue,\
-                                    args=(matrix, tlabel, clabel, pair[0], pair[1], n, qu))
-            threads.append(thread)
-
-            thread.setDaemon(True)
-            thread.start()
-
-    # control given
-    else:
-        for genotype in genotypes:
-            if genotype == ctrl:
-                continue
-
-            thread = threading.Thread(target=calculate_deltas_queue,
-                                    args=(matrix, tlabel, clabel, ctrl, genotype, n, qu))
-            threads.append(thread)
-
-            thread.setDaemon(True)
-            thread.start()
-
-    for thread in threads:
-        gene_1, gene_2, delta_obs, deltas_bootstrapped = qu.get()
-        p_vals[gene_1][gene_2] = ana.calculate_pvalue(delta_obs, deltas_bootstrapped)
+        # TODO: housekeeping
+        with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
+            fs = [executor.submit(calculate_deltas_queue, matrix, tlabel, clabel, pair[0], pair[1], n) for pair in it.combinations(genotypes, 2)]
+            for f in concurrent.futures.as_completed(fs):
+                gene_1, gene_2, delta_obs, deltas_bootstrapped = f.result()
+                p_vals[gene_1][gene_2] = ana.calculate_pvalue(delta_obs, deltas_bootstrapped)
+    #     for pair in it.combinations(genotypes, 2):
+    #
+    #         thread = threading.Thread(target=calculate_deltas_queue,\
+    #                                 args=(matrix, tlabel, clabel, pair[0], pair[1], n, qu))
+    #         threads.append(thread)
+    #
+    #         thread.setDaemon(True)
+    #         thread.start()
+    #
+    # # control given
+    # else:
+    #     for genotype in genotypes:
+    #         if genotype == ctrl:
+    #             continue
+    #
+    #         thread = threading.Thread(target=calculate_deltas_queue,
+    #                                 args=(matrix, tlabel, clabel, ctrl, genotype, n, qu))
+    #         threads.append(thread)
+    #
+    #         thread.setDaemon(True)
+    #         thread.start()
+    #
+    # for thread in threads:
+    #     gene_1, gene_2, delta_obs, deltas_bootstrapped = qu.get()
+    #     p_vals[gene_1][gene_2] = ana.calculate_pvalue(delta_obs, deltas_bootstrapped)
 
     print('#Bootstrapping of {} threads complete.\n'.format(len(threads)))
 
@@ -81,7 +88,7 @@ def calculate_pvalues(df, blabel, tlabel, clabel, n, f=np.mean, **kwargs):
 
     return p_vals.astype(float)
 
-def calculate_deltas_queue(matrix, tlabel, clabel, gene_1, gene_2, n, queue):
+def calculate_deltas_queue(matrix, tlabel, clabel, gene_1, gene_2, n):
     """
     Function to calculate deltas with multithreading.
     Saves p values as tuples in queue.
@@ -104,7 +111,8 @@ def calculate_deltas_queue(matrix, tlabel, clabel, gene_1, gene_2, n, queue):
 
     delta_obs, deltas_bootstrapped = calculate_deltas(ts_1, cs_1, ts_2, cs_2, n)
 
-    queue.put((gene_1, gene_2, delta_obs, deltas_bootstrapped))
+    # queue.put((gene_1, gene_2, delta_obs, deltas_bootstrapped))
+    return gene_1, gene_2, delta_obs, deltas_bootstrapped
 
 def calculate_deltas(ts_1, cs_1, ts_2, cs_2, n, f=np.mean):
     """
@@ -145,6 +153,32 @@ def bootstrap_deltas(ts_1, cs_1, ts_2, cs_2, n, f=np.mean):
     """
     # TODO: figure out best algorithm for speed
 
+    @numba.jit(nopython=True, nogil=True)
+    def calculate_stats(ts, p):
+        l = len(ts)
+        nullps = np.zeros(l)
+        for i in np.arange(l):
+            nullps[i] = np.random.binomial(ts[i], p) / ts[i]
+        nullss = f(nullps)
+
+        return nullss
+
+    @numba.jit(nopython=True, nogil=True)
+    def bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n):
+        p = (np.sum(cs_1) + np.sum(cs_2)) / (np.sum(ts_1) + np.sum(ts_2))
+
+        deltas = np.zeros(n)
+        for i in np.arange(n):
+            deltas[i] = calculate_stats(ts_2, p) - calculate_stats(ts_1, p)
+
+        return deltas
+
+    deltas = bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n)
+
+    return deltas
+
+
+
     # @numba.jit(nopython=True, nogil=True)
     # def bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n):
     #     p = (np.sum(cs_1) + np.sum(cs_2)) / (np.sum(ts_1) + np.sum(ts_2))
@@ -167,6 +201,7 @@ def bootstrap_deltas(ts_1, cs_1, ts_2, cs_2, n, f=np.mean):
     #
     #     return deltas
 
+    # 8/1/2017 numba can't compile array expressions
     # def bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n):
     #     p = (np.sum(cs_1) + np.sum(cs_2)) / (np.sum(ts_1) + np.sum(ts_2))
     #     nullps_1 = np.zeros((len(ts_1), n))  # initialize blank array for sums
