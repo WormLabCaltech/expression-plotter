@@ -6,22 +6,25 @@ import itertools as it
 import analyzer as ana
 import concurrent.futures as fut
 
-def calculate_pvalues(df, blabel, tlabel, clabel, n, f=np.mean, **kwargs):
+def calculate_pvalues(df, blabel, tlabel, mlabel, n, f=np.mean, **kwargs):
     """
     Calculates the p value of the sample.
 
     Parmas:
     df     --- (pandas.DataFrame) data read from csv
-    blabel --- (str) label of column to group by
-    tlabel --- (str) label of column of total samples
-    clabel --- (str) label of column of counts
+    blabel --- (str) grouping column
+    tlabel --- (str) total column
+    mlabel --- (str) measurement column
     n      --- (int) # of bootstraps
-    f      --- (function) statistic to apply
+    f      --- (function) statistic to apply (default: np.mean)
 
     kwargs:
     s     --- (boolean) whether to save matrix to csv (default: False)
     fname --- (str) csv file name
     ctrl  --- (str) control
+
+    Returns:
+    p_vals --- (pandas.DataFrame) of pairwise p values
     """
     s = kwargs.pop('s', False)
     fname = kwargs.pop('fname', None)
@@ -30,7 +33,8 @@ def calculate_pvalues(df, blabel, tlabel, clabel, n, f=np.mean, **kwargs):
     matrix = df.set_index(blabel) # set index
 
     # get genotypes
-    genotypes = matrix.index.unique()
+    matrix.index = matrix.index.map(str)
+    genotypes = list(matrix.index.unique())
 
     p_vals = ana.make_empty_dataframe(len(genotypes),\
             len(genotypes), genotypes, genotypes) # empty pandas dataframe
@@ -48,19 +52,20 @@ def calculate_pvalues(df, blabel, tlabel, clabel, n, f=np.mean, **kwargs):
     with fut.ProcessPoolExecutor(max_workers=cores) as executor:
     # if no control is given, perform all pairwise comparisons
         if ctrl is None:
-            fs = [executor.submit(calculate_deltas_process, matrix, tlabel, clabel,
+            fs = [executor.submit(calculate_deltas_process, matrix, tlabel, mlabel,
                 pair[0], pair[1], n) for pair in it.combinations(genotypes, 2)]
 
     # control given
         else:
             genotypes.remove(ctrl)
-            fs = [executor.submit(calculate_deltas_process, matrix, tlabel, clabel,
+            fs = [executor.submit(calculate_deltas_process, matrix, tlabel, mlabel,
                         ctrl, genotype, n) for genotype in genotypes]
 
         # save to matrix
         for f in fut.as_completed(fs):
             gene_1, gene_2, delta_obs, deltas_bootstrapped = f.result()
             p_vals[gene_1][gene_2] = ana.calculate_pvalue(delta_obs, deltas_bootstrapped)
+
     #     for pair in it.combinations(genotypes, 2):
     #
     #         thread = threading.Thread(target=calculate_deltas_queue,\
@@ -100,96 +105,93 @@ def calculate_pvalues(df, blabel, tlabel, clabel, n, f=np.mean, **kwargs):
 
     return p_vals.astype(float)
 
-def calculate_deltas_process(matrix, tlabel, clabel, gene_1, gene_2, n):
+def calculate_deltas_process(matrix, tlabel, mlabel, gene_1, gene_2, n):
     """
     Function to calculate deltas with multithreading.
     Saves p values as tuples in queue.
 
     Params:
     matrix         --- (pandas.DataFrame) with index correctly set
+    tlabel         --- (str) total column
+    mlabel         --- (str) measurement column
     gene_1, gene_2 --- (String) genotypes to be compared
     n              --- (int) # of bootstraps
-    queue          --- (queue.Queue) queue to save results
-    f              --- (function) to calculate deltas
+    f              --- (function) to calculate deltas (default: np.mean)
 
-    Returns: none
+    Returns: (tuple) gene_1, gene_2, delta_obs, deltas_bootstrapped
     """
+    # matrices with only genes that are given
     matrix_1 = matrix[matrix.index == gene_1]
     matrix_2 = matrix[matrix.index == gene_2]
-    ts_1 = np.array(matrix_1[tlabel])
-    cs_1 = np.array(matrix_1[clabel])
-    ts_2 = np.array(matrix_2[tlabel])
-    cs_2 = np.array(matrix_2[clabel])
 
-    delta_obs, deltas_bootstrapped = calculate_deltas(ts_1, cs_1, ts_2, cs_2, n)
+    # total and measurement arrays
+    ts_1 = np.array(matrix_1[tlabel])
+    ms_1 = np.array(matrix_1[mlabel])
+    ts_2 = np.array(matrix_2[tlabel])
+    ms_2 = np.array(matrix_2[mlabel])
+
+    delta_obs, deltas_bootstrapped = calculate_deltas(ts_1, ms_1, ts_2, ms_2, n)
 
     # queue.put((gene_1, gene_2, delta_obs, deltas_bootstrapped))
     return gene_1, gene_2, delta_obs, deltas_bootstrapped
 
-def calculate_deltas(ts_1, cs_1, ts_2, cs_2, n, f=np.mean):
+def calculate_deltas(ts_1, ms_1, ts_2, ms_2, n, f=np.mean):
     """
     Calculates the observed and bootstrapped deltas.
 
     Params:
     ts_1 --- (np.array) total samples 1
-    cs_1 --- (np.array) counts 1
+    ms_1 --- (np.array) measurements 1
     ts_2 --- (np.array) total samples 2
-    cs_2 --- (np.array) counts 2
+    ms_2 --- (np.array) measurements 2
     n    --- (int) # of bootstraps
-    f    --- (function) statistic to apply
+    f    --- (function) statistic to apply (default: np.mean)
 
-    Returns:
+    Returns: (tuple) delta_obs, deltas_bootstrapped
     """
     # calculate observed delta
-    stat_1 = f(cs_1 / ts_1)
-    stat_2 = f(cs_2 / ts_2)
+    stat_1 = f(ms_1 / ts_1)
+    stat_2 = f(ms_2 / ts_2)
     delta_obs = stat_2 - stat_1
 
-    deltas_bootstrapped = bootstrap_deltas(ts_1, cs_1, ts_2, cs_2, n, f)
+    deltas_bootstrapped = bootstrap_deltas(ts_1, ms_1, ts_2, ms_2, n, f)
 
     return delta_obs, deltas_bootstrapped
 
-def bootstrap_deltas(ts_1, cs_1, ts_2, cs_2, n, f=np.mean):
+def bootstrap_deltas(ts_1, ms_1, ts_2, ms_2, n, f=np.mean):
     """
     Calculates bootstrapped deltas.
 
     Params:
     ts_1 --- (np.array) total samples 1
-    cs_1 --- (np.array) counts 1
+    ms_1 --- (np.array) measurements 1
     ts_2 --- (np.array) total samples 2
-    cs_2 --- (np.array) counts 2
+    ms_2 --- (np.array) measurements 2
     n    --- (int) # of bootstraps
 
     Returns:
     deltas --- (np.array) of length n
     """
-    # TODO: figure out best algorithm for speed
 
-    @numba.jit(nopython=True, nogil=True)
-    def calculate_stats(ts, p):
-        l = len(ts)
-        nullps = np.zeros(l)
-        for i in np.arange(l):
-            nullps[i] = np.random.binomial(ts[i], p) / ts[i]
-        nullss = f(nullps)
-
-        return nullss
-
-    @numba.jit(nopython=True, nogil=True)
-    def bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n):
-        p = (np.sum(cs_1) + np.sum(cs_2)) / (np.sum(ts_1) + np.sum(ts_2))
-
-        deltas = np.zeros(n)
-        for i in np.arange(n):
-            deltas[i] = calculate_stats(ts_2, p) - calculate_stats(ts_1, p)
-
-        return deltas
-
-    deltas = bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n)
-
-    return deltas
-
-
+    # @numba.jit(nopython=True, nogil=True)
+    # def calculate_stats(ts, p):
+    #     l = len(ts)
+    #     nullps = np.zeros(l)
+    #     for i in np.arange(l):
+    #         nullps[i] = np.random.binomial(ts[i], p) / ts[i]
+    #     nullss = f(nullps)
+    #
+    #     return nullss
+    #
+    # @numba.jit(nopython=True, nogil=True)
+    # def bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n):
+    #     p = (np.sum(cs_1) + np.sum(cs_2)) / (np.sum(ts_1) + np.sum(ts_2))
+    #
+    #     deltas = np.zeros(n)
+    #     for i in np.arange(n):
+    #         deltas[i] = calculate_stats(ts_2, p) - calculate_stats(ts_1, p)
+    #
+    #     return deltas
 
     # @numba.jit(nopython=True, nogil=True)
     # def bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n):
@@ -214,26 +216,27 @@ def bootstrap_deltas(ts_1, cs_1, ts_2, cs_2, n, f=np.mean):
     #     return deltas
 
     # 8/1/2017 numba can't compile array expressions
-    # def bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n):
-    #     p = (np.sum(cs_1) + np.sum(cs_2)) / (np.sum(ts_1) + np.sum(ts_2))
-    #     nullps_1 = np.zeros((len(ts_1), n))  # initialize blank array for sums
-    #     # for each plate 1
-    #     for i in np.arange(len(ts_1)):
-    #         nullps_1[i,:] = np.random.binomial(ts_1[i], p, n) / ts_1[i]
-    #     # find mean of plate 1
-    #     nullms_1 = np.mean(nullps_1, axis=0)
-    #
-    #     nullps_2 = np.zeros((len(ts_2), n))  # initialize blank array for sums
-    #     # for each plate 2
-    #     for i in np.arange(len(ts_2)):
-    #         nullps_2[i,:] = np.random.binomial(ts_2[i], p, n) / ts_2[i]
-    #     # find mean of plate 2
-    #     nullms_2 = np.mean(nullps_2, axis=0)
-    #
-    #     # find deltas
-    #     deltas = nullms_2 - nullms_1
-    #
-    #     return deltas
+    # 8/2/2017 fastest of all other algorithms (even without numba)
+    def bootstrap_deltas_numba(ts_1, ms_1, ts_2, ms_2, n):
+        p = (np.sum(ms_1) + np.sum(ms_2)) / (np.sum(ts_1) + np.sum(ts_2))
+        nullps_1 = np.zeros((len(ts_1), n))  # initialize blank array for sums
+        # for each plate 1
+        for i in np.arange(len(ts_1)):
+            nullps_1[i,:] = np.random.binomial(ts_1[i], p, n) / ts_1[i]
+        # find mean of plate 1
+        nullms_1 = np.mean(nullps_1, axis=0)
+
+        nullps_2 = np.zeros((len(ts_2), n))  # initialize blank array for sums
+        # for each plate 2
+        for i in np.arange(len(ts_2)):
+            nullps_2[i,:] = np.random.binomial(ts_2[i], p, n) / ts_2[i]
+        # find mean of plate 2
+        nullms_2 = np.mean(nullps_2, axis=0)
+
+        # find deltas
+        deltas = nullms_2 - nullms_1
+
+        return deltas
 
     # 7/31/2017 This is a vectorized function, but numba does not support
     #           np.split and np.repeat
@@ -264,9 +267,9 @@ def bootstrap_deltas(ts_1, cs_1, ts_2, cs_2, n, f=np.mean):
     #
     #     return deltas
 
-    # deltas = bootstrap_deltas_numba(ts_1, cs_1, ts_2, cs_2, n)
-    #
-    # return deltas
+    deltas = bootstrap_deltas_numba(ts_1, ms_1, ts_2, ms_2, n)
+
+    return deltas
 
 
 
@@ -323,34 +326,38 @@ if __name__ == '__main__':
     fs = {'mean': np.mean,
             'median': np.median}
 
-    parser = argparse.ArgumentParser(description='Perform statistical analysis on binary data.')
+    parser = argparse.ArgumentParser(description='Run analysis of binary data.')
     # begin command line arguments
     parser.add_argument('csv_data',
-                        help='The full path to the csv data file.',
+                        help='Path to the csv data file.',
                         type=str)
     parser.add_argument('title',
-                        help='Title for your analysis. (without file \
+                        help='Title of analysis. (without file \
                         extension)',
                         type=str)
     parser.add_argument('-b',
-                        help='Number of bootstraps to perform. \
+                        help='Number of bootstraps. \
                         (default: {0})'.format(n),
                         type=int,
                         default=100)
     parser.add_argument('-i',
                         help='Column to group measurements by. \
-                        (defaults to first column of csv)',
+                        (defaults to first column)',
+                        type=str,
+                        default=None)
+    parser.add_argument('-c',
+                        help='Control genotype. \
+                        (performs one-vs-all analysis if given)',
                         type=str,
                         default=None)
     parser.add_argument('-t',
                         help='Column for total sample size. \
-                        (defaults to second column of csv)',
+                        (defaults to second column)',
                         type=str,
                         default=None)
-    parser.add_argument('-c',
-                        help='Column for counts. \
-                        (defaults to third column of csv)',
-                        type=str,
+    parser.add_argument('-m',
+                        help='Column for measurements. \
+                        (defaults to third column)',
                         default=None)
     parser.add_argument('-s',
                         help='Statistic to apply. \
@@ -359,7 +366,7 @@ if __name__ == '__main__':
                         choices=fs.keys(),
                         default='mean')
     parser.add_argument('--save',
-                        help='Save data to csv.',
+                        help='Save matrices to csv.',
                         action='store_true')
     # end command line arguments
     args = parser.parse_args()
@@ -368,12 +375,29 @@ if __name__ == '__main__':
     title = args.title
     n = args.b
     blabel = args.i
+    ctrl = args.c
     tlabel = args.t
-    clabel = args.c
+    mlabel = args.m
     f = fs[args.s]
     s = args.save
 
     df = pd.read_csv(csv_path) # read csv data
+
+    # infer by, tot, and count columns
+    if blabel is None:
+        print('##No grouping column given...', end='')
+        blabel = df.keys()[0]
+        print('Inferred as \'{}\' from data.\n'.format(blabel))
+
+    if tlabel is None:
+        print('##No total column given...', end='')
+        tlabel = df.keys()[1]
+        print('Inferred as \'{}\' from data.\n'.format(tlabel))
+
+    if mlabel is None:
+        print('##No measurement column given...', end='')
+        mlabel = df.keys()[2]
+        print('Inferred as \'{}\' from data.\n'.format(mlabel))
 
     # set directory to title
     path = './{}'.format(title)
@@ -383,21 +407,5 @@ if __name__ == '__main__':
         os.mkdir(path)
         os.chdir(path)
 
-    # infer by, tot, and count columns
-    if blabel is None:
-        print('##No groupby given.')
-        blabel = df.keys()[0]
-        print('#\tInferred as \'{}\' from data.\n'.format(blabel))
-
-    if tlabel is None:
-        print('##No total column given.')
-        tlabel = df.keys()[1]
-        print('#\tInferred as \'{}\' from data\n'.format(tlabel))
-
-    if clabel is None:
-        print('##No count column given.')
-        clabel = df.keys()[2]
-        print('#\tInferred as \'{}\' from data\n'.format(clabel))
-
-    p_vals = calculate_pvalues(df, blabel, tlabel, clabel, n, f=f, s=s, fname='p')
+    p_vals = calculate_pvalues(df, blabel, tlabel, mlabel, n, f=f, ctrl=ctrl, s=s, fname='p')
     q_vals = ana.calculate_qvalues(p_vals, s=s, fname='q')
