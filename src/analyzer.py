@@ -18,7 +18,7 @@ def bootstrap_deltas(x, y, n, f=np.mean):
     Params:
     x, y --- (list-like) datasets
     n    --- (int) # of bootstraps
-    f    --- (function) to calculate deltas
+    f    --- (function) to calculate deltas (default: np.mean)
 
     Returns:
     deltas -- a 1d array of length `n'
@@ -63,17 +63,17 @@ def bootstrap_deltas(x, y, n, f=np.mean):
 
     return deltas
 
-def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
+def calculate_pvalues(df, blabel, mlabel, n, f=np.mean, **kwargs):
     """
     Calculates the p values of each pairwise comparison.
     This function calls calculate_delta() and calculate_pvalue()
 
     Params:
-    df    --- (pandas.DataFrame) data read from csv
-    which --- (str) which column to perform comparison
-    by    --- (String) label to group by (default: Genotype)
-    n     --- (int) # of bootstraps
-    f     --- (function) to calculate deltas
+    df     --- (pandas.DataFrame) data read from csv
+    blabel --- (str) grouping column
+    mlabel --- (str) measurement column
+    n      --- (int) # of bootstraps
+    f      --- (function) to calculate deltas (default: np.mean)
 
     kwargs:
     s     --- (boolean) whether to save matrix to csv (default: False)
@@ -88,16 +88,11 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
     fname = kwargs.pop('fname', None)
     ctrl = kwargs.pop('ctrl', None)
 
-    df = df.set_index(by) # set genotype as index
-    df = df.astype(float)
+    matrix = df.set_index(blabel) # set genotype as index
 
-    # set_index('Genotype') must have already been done to matrix
-    # matrix is a n x 2 matrix, column 1 for genotypes
-    # and column 2 for measurments
-    matrix = df.groupby(by)[which].unique()
-    # now, matrix has been reduced to list of unique genotypes
-
-    genotypes = matrix.keys() # list of all genotypes
+    # get genotypes
+    matrix.index = matrix.index.map(str)
+    genotypes = list(matrix.index.unique())
 
     # 7/19/2017 unnecessary to save deltas
     # obs_delta = make_empty_dataframe(len(genotypes),\
@@ -119,8 +114,9 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
     with fut.ProcessPoolExecutor(max_workers=cores) as executor:
     # if no control is given, perform all pairwise comparisons
         if ctrl is None:
-            fs = [executor.submit(calculate_deltas_process, matrix, pair[0],
-                        pair[1], n) for pair in it.combinations(genotypes, 2)]
+            # list of futures
+            fs = [executor.submit(calculate_deltas_process, matrix, mlabel,
+                pair[0], pair[1], n) for pair in it.combinations(genotypes, 2)]
         # 8/1/2017 replaced with ProcessPoolExecutor
         # for pair in it.combinations(genotypes, 2):
         #
@@ -133,9 +129,10 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
 
     # control given
         else:
-            genotypes.remove(ctrl)
-            fs = [executor.submit(calculate_deltas_process, matrix, ctrl,
-                                genotype, n) for genotype in genotypes]
+            genotypes.remove(ctrl) # remove control genotype
+            # list of futures
+            fs = [executor.submit(calculate_deltas_process, matrix, mlabel,
+                        ctrl, genotype, n) for genotype in genotypes]
 
         # save to matrix
         for f in fut.as_completed(fs):
@@ -157,10 +154,12 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
     #     gene_1, gene_2, delta_obs, deltas_bootstrapped = qu.get()
     #     p_vals[gene_1][gene_2] = calculate_pvalue(delta_obs, deltas_bootstrapped)
     #
-    # print('#Bootstrapping of {} threads complete.\n'.format(len(threads)))
+
+    print('#Bootstrapping complete.\n')
 
     print('#P-value matrix:')
     print(p_vals)
+    print()
 
     # save matrix to csv
     if s:
@@ -169,22 +168,28 @@ def calculate_pvalues(df, by, which, n, f=np.mean, **kwargs):
 
     return p_vals.astype(float)
 
-def calculate_deltas_process(matrix, gene_1, gene_2, n, f=np.mean):
+def calculate_deltas_process(matrix, mlabel, gene_1, gene_2, n, f=np.mean):
     """
     Function to calculate deltas with multithreading.
     Saves p values as tuples in queue.
 
     Params:
     matrix         --- (pandas.DataFrame) grouped data
+    mlabel         --- (str) measurement column
     gene_1, gene_2 --- (String) genotypes to be compared
     n              --- (int) # of bootstraps
-    queue          --- (queue.Queue) queue to save results
-    f              --- (function) to calculate deltas
+    f              --- (function) to calculate deltas (default: np.mean)
 
-    Returns: none
+    Returns: (tuple) gene_1, gene_2, delta_obs, deltas_bootstrapped
     """
-    delta_obs, deltas_bootstrapped = calculate_deltas(matrix[gene_1],\
-                                                    matrix[gene_2], n)
+    # matrices with only genes that are given
+    matrix_1 = matrix[matrix.index == gene_1]
+    matrix_2 = matrix[matrix.index == gene_2]
+
+    ms_1 = np.array(matrix_1[mlabel])
+    ms_2 = np.array(matrix_2[mlabel])
+
+    delta_obs, deltas_bootstrapped = calculate_deltas(ms_1, ms_2, n)
 
     # queue.put((gene_1, gene_2, delta_obs, deltas_bootstrapped))
     return gene_1, gene_2, delta_obs, deltas_bootstrapped
@@ -197,9 +202,9 @@ def calculate_deltas(x, y, n, f=np.mean):
     Params:
     x, y --- (list-like) observed values/measurements
     n    --- (int) # of bootstraps
-    f    --- (function) to calculate deltas
+    f    --- (function) to calculate deltas (default: np.mean)
 
-    Returns:
+    Returns: (tuple) delta_obs, deltas_bootstrapped
     delta_obs           --- (float) observed delta
     deltas_bootstrapped --- (numpy.array) of bootstrapped deltas
     """
@@ -351,17 +356,17 @@ def benjamin_hochberg_stepup(p_vals):
 
     return q_vals_sorted, idx_no_nan
 
-def get_signifcance(df, vals, control, by, which, threshold, f=np.mean):
+def get_signifcance(df, vals, ctrl, blabel, mlabel, threshold, f=np.mean):
     """
     Maps significance and statistics to dataframe.
 
     Params:
     df        --- (pandas.DataFrame) data read from csv
     vals      --- (pandas.DataFrame) p/q values
-    control   --- (str) control
-    by        --- (str) index to group by
-    which     --- (str) column to perform analysis
-    threshold --- (float) p value threshold
+    ctrl      --- (str) control
+    blabel    --- (str) grouping column
+    mlabel    --- (str) measurement column
+    threshold --- (float) p/q value threshold
     f         --- (function) to calculate statistic (default: np.mean)
 
     Returns:
@@ -369,47 +374,58 @@ def get_signifcance(df, vals, control, by, which, threshold, f=np.mean):
     """
     df = df.copy() # need to operate on copy -- shouldn't change original matrix
 
-    grouped = df.groupby(by) # dataframe grouped by index
+    grouped = df.groupby(blabel) # dataframe grouped by index
 
-    df_control = df[df[by] == control][which].values
+    df_control = df[df[blabel] == ctrl][mlabel].values
     sig = {} # hash to store significance
-    sig[control] = 'control'
+    sig[ctrl] = 'control'
     stat = {} # hash to store statistics
 
     for name, group in grouped:
-        stat[name] = f(group[which])
+        stat[name] = f(group[mlabel])
 
-        if not name == control:
+        if not name == ctrl:
             # assign correct p value (not nan)
-            p = vals[control][name]
+            p = vals[ctrl][name]
             if np.isnan(p):
-                p = vals[name][control]
+                p = vals[name][ctrl]
 
             if p < threshold:
                 sig[name] = 'sig'
             else:
                 sig[name] = 'non-sig'
 
-    df['sig'] = df[by].map(sig)
+    df['sig'] = df[blabel].map(sig)
 
     # sort by statistic
     df2 = df.copy()
-    df2['stat'] = df2[by].map(stat)
+    df2['stat'] = df2[blabel].map(stat)
     df2.sort_values('stat', inplace=True)
 
     return df2
 
-def save_matrix(matrix, fname, replace=None):
+def save_matrix(matrix, fname, **kwargs):
     """
     Saves the matrix in both 2d and tidy csv format.
 
     Params:
     matrix  --- (pandas.DataFrame) matrix to be saved
     fname   --- (str) output csv filename
-    replace --- (str) value to replace 0.0 values
+
+    kwargs:
+    replace --- (str) value to replace 0.0 values (default: None)
+    col_1   --- (str) column 1 label (default: col_1)
+    col_2   --- (str) column 2 label (default: col_2)
+    val     --- (str) value label (default: val)
+    sig     --- (boolean) add column for significance (default: False)
 
     Returns: none
     """
+    replace = kwargs.pop('replace', None)
+    col_1 = kwargs.pop('col_1', 'col_1')
+    col_2 = kwargs.pop('col_2', 'col_2')
+    val = kwargs.pop('val', 'val')
+
     # replace values
     if not replace == None:
         matrix = matrix.replace(0, replace)
@@ -419,15 +435,16 @@ def save_matrix(matrix, fname, replace=None):
 
     matrix.to_csv('{}_matrix.csv'.format(fname))
 
-    # convert to tidy format if matrix has more than one column
-    if len(matrix.reset_index().keys()) > 2:
-        tidy = matrix.reset_index()
-        tidy.rename(columns={'index': 'col_1'}, inplace=True)
-        tidy = pd.melt(tidy, id_vars='col_1', var_name="col_2", value_name="val")
-        tidy = tidy.dropna()
-        tidy.set_index('col_1', inplace=True) # prevent row index from being printed
+    # convert to tidy format
+    tidy = matrix.transpose()
+    tidy = tidy.reset_index()
+    tidy.rename(columns={'index': col_1}, inplace=True)
+    tidy = pd.melt(tidy, id_vars=col_1, var_name=col_2, value_name=val)
+    tidy = tidy.dropna()
+    tidy.set_index(col_1, inplace=True) # prevent row index from being printed
+    tidy.sort_index(inplace=True)
 
-        tidy.to_csv('{}_tidy.csv'.format(fname))
+    tidy.to_csv('{}_tidy.csv'.format(fname))
 
 
 if __name__ == '__main__':
@@ -439,28 +456,42 @@ if __name__ == '__main__':
     fs = {'mean': np.mean,
             'median': np.median}
 
-    parser = argparse.ArgumentParser(description='Run data anlysis \
-                                        and plot boxplot.')
+    parser = argparse.ArgumentParser(description='Run analysis of continuous data.')
     # begin command line arguments
     parser.add_argument('csv_data',
-                        help='The full path to the csv data file.',
+                        help='Path to the csv data file.',
                         type=str)
     parser.add_argument('title',
-                        help='Title for your analysis. (without file \
+                        help='Title of analysis. (without file \
                         extension)',
                         type=str)
     parser.add_argument('-b',
-                        help='Number of bootstraps to perform. \
+                        help='Number of bootstraps. \
                         (default: {0})'.format(n),
                         type=int,
                         default=100)
     parser.add_argument('-i',
                         help='Column to group measurements by. \
-                        (defaults to first element of the csv file)',
+                        (defaults to first column)',
                         type=str,
                         default=None)
+    parser.add_argument('-c',
+                        help='Control genotype. \
+                        (performs one-vs-all analysis if given)',
+                        type=str,
+                        default=None)
+    parser.add_argument('-m',
+                        help='Column for measurements. \
+                        (defaults to second column)',
+                        default=None)
+    parser.add_argument('-s',
+                        help='Statistic to apply. \
+                        (default: {})'.format(stat),
+                        type=str,
+                        choices=fs.keys(),
+                        default='mean')
     parser.add_argument('--save',
-                        help='Save data to csv.',
+                        help='Save matrices to csv.',
                         action='store_true')
     # end command line arguments
     args = parser.parse_args()
@@ -468,16 +499,25 @@ if __name__ == '__main__':
     csv_path = args.csv_data
     title = args.title
     n = args.b
-    by = args.i
+    blabel = args.i
+    ctrl = args.c
+    mlabel = args.m
+    f = fs[args.s]
     s = args.save
-
-    # change directory to title
-    os.chdir(title)
 
     df = pd.read_csv(csv_path) # read csv data
 
-    if by == None:
-        by = df.keys()[0]
+    # infer labels
+    if blabel is None:
+        print('##No grouping column given...', end='')
+        blabel = df.keys()[0]
+        print('Inferred as \'{}\' from data.\n'.format(blabel))
+
+    if mlabel is None:
+        print('##No measurement column given...', end='')
+        mlabel = df.keys()[1]
+        print('Inferred as \'{}\' from data.\n'.format(mlabel))
+
 
     # set directory to title
     path = './{}'.format(title)
@@ -487,40 +527,5 @@ if __name__ == '__main__':
         os.mkdir(path)
         os.chdir(path)
 
-    # 7/18/2017 replaced
-    # genotypes = np.unique(df_data['Genotype']) # get unique genotypes
-    #
-    # # begin counting samples
-    # geno_counts = {}
-    # for genotype in genotypes:
-    #     geno_counts[genotype] = (df_data.Genotype == genotype).sum()
-    # # end counting samples
-    #
-    # measurements = df_data.keys()[1:]
-
-    # # calculate deltas
-    # obs_deltas = calculate_deltas(obs_mean)
-    # boot_deltas = calculate_deltas(boot_means)
-    #
-    # print(obs_deltas)
-    # print(boot_deltas)
-    #
-    # print(obs_deltas.keys())
-
-    for measurement in df:
-        # don't check same column as group by
-        if measurement == by:
-            continue
-
-        # calculate pvalues
-        p_vals = calculate_pvalues(df, by, measurement, n, f=np.mean, save=s)
-        p_vals = p_vals.astype(float)
-
-        # calculate q_values
-        q_vals = calculate_qvalues(p_vals, save=s)
-        #
-        # plot qvalues
-        # plot_qvalue_heatmaps(q_vals, threshold, n, measurement, title=title)
-        #
-        # # plot boxplot -- plotting functionality moved to plotter.py
-        # plot_boxplot(df_data, threshold, title=title)
+    p_vals = calculate_pvalues(df, blabel, mlabel, n, f=f, ctrl=ctrl, s=s, fname='p')
+    q_vals = calculate_qvalues(p_vals, s=s, fname='q')
