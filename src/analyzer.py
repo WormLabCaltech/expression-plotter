@@ -356,7 +356,7 @@ def benjamin_hochberg_stepup(p_vals):
 
     return q_vals_sorted, idx_no_nan
 
-def get_signifcance(df, vals, ctrl, blabel, mlabel, threshold, f=np.mean):
+def get_significance(df, vals, ctrl, blabel, mlabel, threshold, f=np.mean):
     """
     Maps significance and statistics to dataframe.
 
@@ -425,6 +425,7 @@ def save_matrix(matrix, fname, **kwargs):
     col_1 = kwargs.pop('col_1', 'col_1')
     col_2 = kwargs.pop('col_2', 'col_2')
     val = kwargs.pop('val', 'val')
+    sig = kwargs.pop('sig', False)
 
     # replace values
     if not replace == None:

@@ -139,7 +139,7 @@ def plot_boxplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs):
     slabel = kwargs.pop('slabel', 'control statistic')
 
     # dataframe with mapped significance
-    df2 = ana.get_signifcance(df, vals, control, by, which, threshold, f=f)
+    df2 = ana.get_significance(df, vals, control, by, which, threshold, f=f)
 
     fig = plt.figure('boxplot_{}'.format(which))
     ax = sns.boxplot(x=which, y=by, data=df2, **kwargs)
@@ -220,7 +220,7 @@ def plot_jitterplot(df, vals, control, by, which, threshold, f=np.mean, **kwargs
     slabel = kwargs.pop('slabel', 'control statistic')
 
     # dataframe with mapped significance
-    df2 = ana.get_signifcance(df, vals, control, by, which, threshold, f=f)
+    df2 = ana.get_significance(df, vals, control, by, which, threshold, f=f)
 
     # plot figure
     fig = plt.figure('jitterplot_{}'.format(which))
