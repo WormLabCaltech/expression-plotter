@@ -130,8 +130,8 @@ if __name__ == '__main__':
     import os
     os.chdir('./simulation_output')
 
-    n = 1
-    boot_ns = [1, 10]
+    n = 30
+    boot_ns = [1, 10, 10**2, 10**3, 10**4, 10**5, 10**6]
     sim = Simulation()
 
     results = []
@@ -147,7 +147,7 @@ if __name__ == '__main__':
 
         fig = plt.figure('jitter_{}'.format(boot_n))
 
-        ax = sns.stripplot(data=df, jitter=True)
+        ax = sns.stripplot(data=df, jitter=True, alpha=0.5)
         ax.yaxis.grid(False)
         plt.savefig('jitter_{}.png'.format(boot_n), bbox_inches='tight')
 
@@ -155,10 +155,9 @@ if __name__ == '__main__':
     for boot_n, result in zip(boot_ns, results):
         boot_results[str(boot_n)] = result
 
-    print(boot_results)
-
-    plt.figure('jitter_all')
     df = pd.DataFrame(boot_results)
-    ax = sns.stripplot(data=df, jitter=True)
-    ax.yaxis.grid(False)
-    plt.savefig('jitter_all.png', bbox_inches='tight')
+    for t in sim.types:
+        plt.figure('jitter_{}'.format(t))
+        ax = sns.stripplot(data=df.transpose()[t], jitter=True, alpha=0.5)
+        ax.yaxis.grid(False)
+        plt.savefig('jitter_{}.png'.format(t), bbox_inches='tight')
