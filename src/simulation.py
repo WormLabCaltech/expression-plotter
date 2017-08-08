@@ -39,11 +39,18 @@ class Simulation():
         Simulates for all dataframes.
         """
         self.sim1_results = {}
+        self.sim1_results_l = []
 
         for t in self.types:
             self.sim1_results[t] = {}
             for boot_n in boot_ns:
-                self.sim1_results[t][str(boot_n)] = self.simulate1(self.dfs[t], n=n, boot_n=boot_n)
+                p_vals = self.simulate1(self.dfs[t], n=n, boot_n=boot_n)
+                self.sim1_results[t][str(boot_n)] = p_vals
+
+                for p in p_vals:
+                    row = [t, boot_n, p]
+                    self.sim1_results_l.append(row)
+
 
         # make into dataframe
         dfs = []
@@ -56,7 +63,9 @@ class Simulation():
         self.df_sim1.reset_index(drop=True, inplace=True)
 
         self.df_sim1.to_csv('sim1.csv', index=False)
-        self.plot_sim1()
+
+        self.df_sim1_l = pd.DataFrame(self.sim1_results_l, columns=['type', 'n', 'p'])
+        self.df_sim1_l.to_csv('sim1_l.csv', index=False)
 
     def plot_sim1(self):
         """
@@ -136,7 +145,6 @@ class Simulation():
         # make into dataframe
         self.df_sim2 = pd.DataFrame(self.sim2_results, columns=['n', 'delta', 'p'])
         self.df_sim2.to_csv('sim2.csv', index=False)
-        self.plot_sim2()
 
     def plot_sim2(self):
         """
@@ -178,7 +186,6 @@ class Simulation():
 
         self.df_sim3 = pd.DataFrame(self.sim3_results, columns=['variance', 'p', 't', 'p_t'])
         self.df_sim3.to_csv('sim3.csv', index=False)
-        self.plot_sim3()
 
     def plot_sim3(self):
         """
@@ -284,13 +291,17 @@ if __name__ == '__main__':
     import os
     os.chdir('./simulation_output')
 
-    n = 30
+    n = 50
     boot_ns = [10, 10**2, 10**3, 10**4, 10**5]
     sim = Simulation()
 
     sim.simulate1_all(n=n, boot_ns=boot_ns)
     sim.simulate2(n=n, boot_ns=boot_ns)
     sim.simulate3()
+
+    sim.plot_sim1()
+    sim.plot_sim2()
+    sim.plot_sim3()
 
 
 
