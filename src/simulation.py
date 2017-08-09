@@ -123,7 +123,7 @@ class Simulation():
 
         return results
 
-    def simulate2(self, n=10, boot_ns=[10, 10**2, 10**3], deltas=range(200), **kwargs):
+    def simulate2(self, n=10, boot_ns=[10, 10**2, 10**3], deltas=range(0,200,5), **kwargs):
         """
         Simulates varying delta vs p for different bootstraps.
         """
@@ -136,6 +136,8 @@ class Simulation():
                 df = self.make_diff_df(mean=delta)
 
                 for i in range(n):
+                    print('{}/{} {}/{} {}/{}'.format(boot_ns.index(boot_n)+1, len(boot_ns), deltas.index(delta)+1, len(deltas), i+1, n))
+
                     p = ana.calculate_pvalues(df, blabel, mlabel, boot_n)
                     names = p.index
                     p = p[names[0]][names[1]]
@@ -169,6 +171,7 @@ class Simulation():
         self.sim3_results = []
 
         for delta in deltas:
+            print('{}/{}'.format(deltas.index(delta), len(deltas)))
             df = self.make_diff_df(var=delta)
             p = ana.calculate_pvalues(df, blabel, mlabel, boot_n)
             names = p.index
@@ -296,12 +299,12 @@ if __name__ == '__main__':
     sim = Simulation()
 
     sim.simulate1_all(n=n, boot_ns=boot_ns)
-    sim.simulate2(n=n, boot_ns=boot_ns)
+    sim.simulate2(n=10, boot_ns=boot_ns)
     sim.simulate3()
 
-    sim.plot_sim1()
-    sim.plot_sim2()
-    sim.plot_sim3()
+    # sim.plot_sim1()
+    # sim.plot_sim2()
+    # sim.plot_sim3()
 
 
 
