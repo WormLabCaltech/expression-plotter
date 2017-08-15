@@ -31,7 +31,7 @@ class Simulation():
         self.dfs = {}
         self.types = ['same', 'stat', 'diff']
         self.dfs['same'] = self.make_same_df()
-        self.dfs['stat'] = self.make_stat_df()
+        self.dfs['stat'] = self.make_stat_df(count=100)
         self.dfs['diff'] = self.make_diff_df()
 
     def corr_p(self, p, n):
@@ -272,6 +272,25 @@ class Simulation():
         self.df_sim5 = pd.DataFrame(self.sim5_results, columns=['delta', 'p', 'corr_p', 't', 'p_t (two)', 'p_t (one)'])
         self.df_sim5.to_csv('sim5.csv', index=False)
 
+    def simulate6(self, n, boot_ns, **kwargs):
+        blabel = kwargs.pop('blabel', 'name')
+        mlabel = kwargs.pop('mlabel', 'measurement')
+
+        self.sim6_results = []
+        for i in range(n):
+            for boot_n in boot_ns:
+                print('{}/{} {}/{}'.format(boot_ns.index(boot_n), len(boot_ns), i+1, n))
+                df = self.make_stat_df(count=1000)
+                p = ana.calculate_pvalues(df, blabel, mlabel, boot_n)
+                names = p.index
+                p = p[names[0]][names[1]]
+
+                row = [boot_n, p]
+                self.sim6_results.append(row)
+
+        self.df_sim6 = pd.DataFrame(self.sim6_results, columns=['n', 'p'])
+        self.df_sim6.to_csv('sim6.csv', index=False)
+
 
     def randn_skew_fast(self, N, alpha=0.0, loc=0.0, scale=1.0):
         """
@@ -429,7 +448,8 @@ if __name__ == '__main__':
     # sim.simulate1_all(n=n, boot_ns=boot_ns)
     # sim.simulate2(n=10, boot_ns=boot_ns)
     # sim.simulate3(deltas=range(0,1000))
-    sim.simulate5()
+    # sim.simulate5()
+    sim.simulate6(n, boot_ns)
 
     # sim.plot_sim1()
     # sim.plot_sim2()

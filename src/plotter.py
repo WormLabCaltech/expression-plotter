@@ -4,6 +4,8 @@ Author: Joseph Min (kmin@caltech.edu)
 This script is used to plot graphs of a given dataset.
 It calls functions from analyzer to determine significance.
 """
+# TODO: change arguments to functions to match analyzer.py
+# TODO: fix heatmap label plotting
 
 import numpy as np
 import pandas as pd
@@ -83,12 +85,11 @@ def plot_heatmap(df, vals, by, which, threshold, f=np.mean, **kwargs):
     fig = plt.figure('heatmap_{}'.format(which), figsize=figsize)
 
     # convert values to reciprocal log
-    values = vals.replace(0.0, 1/n)
-    values = -values.apply(np.log10)
-    vmax = -np.log10(1/n)
+    values = -vals.apply(np.log10)
+    vmax = -np.log10(10**-5)
     vmin = -np.log10(threshold)
 
-    cbar_kws['label'] = r'$-\log_{10}(q)$'
+    cbar_kws['label'] = ylabel
 
     # draw heatmap and apply mask
     ax = sns.heatmap(values, cmap='magma', mask=mask, vmin=vmin, vmax=vmax,\
