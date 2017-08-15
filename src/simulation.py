@@ -34,6 +34,15 @@ class Simulation():
         self.dfs['stat'] = self.make_stat_df()
         self.dfs['diff'] = self.make_diff_df()
 
+    def corr_p(self, p, n):
+        """
+        Corrects 0.0 p values.
+        """
+        if p == 0.0:
+            return 1/n
+        else:
+            return p
+
     def simulate1_all(self, n=10, boot_ns=[10, 10**2, 10**3, 10**4, 10**5, 10**6], **kwargs):
         """
         Simulates for all dataframes.
@@ -48,7 +57,7 @@ class Simulation():
                 self.sim1_results[t][str(boot_n)] = p_vals
 
                 for p in p_vals:
-                    row = [t, boot_n, p]
+                    row = [t, boot_n, p, self.corr_p(p, boot_n)]
                     self.sim1_results_l.append(row)
 
 
@@ -64,7 +73,7 @@ class Simulation():
 
         self.df_sim1.to_csv('sim1.csv', index=False)
 
-        self.df_sim1_l = pd.DataFrame(self.sim1_results_l, columns=['type', 'n', 'p'])
+        self.df_sim1_l = pd.DataFrame(self.sim1_results_l, columns=['type', 'n', 'p', 'corr_p'])
         self.df_sim1_l.to_csv('sim1_l.csv', index=False)
 
     def plot_sim1(self):
@@ -115,6 +124,7 @@ class Simulation():
         results = []
 
         for i in range(n):
+            print('{}/{}'.format(i, n))
             p_vals = ana.calculate_pvalues(df, blabel, mlabel, boot_n)
             names = p_vals.index
             p_val = p_vals[names[0]][names[1]]
@@ -123,7 +133,7 @@ class Simulation():
 
         return results
 
-    def simulate2(self, n=10, boot_ns=[10, 10**2, 10**3], deltas=range(0,200,5), **kwargs):
+    def simulate2(self, n=10, boot_ns=[10, 10**2, 10**3], deltas=range(0,400,5), **kwargs):
         """
         Simulates varying delta vs p for different bootstraps.
         """
@@ -131,21 +141,21 @@ class Simulation():
         mlabel = kwargs.pop('mlabel', 'measurement')
 
         self.sim2_results = []
-        for boot_n in boot_ns:
-            for delta in deltas:
-                df = self.make_diff_df(mean=delta)
+        for delta in deltas:
+            df = self.make_diff_df(mean=delta)
+            for boot_n in boot_ns:
 
                 for i in range(n):
-                    print('{}/{} {}/{} {}/{}'.format(boot_ns.index(boot_n)+1, len(boot_ns), deltas.index(delta)+1, len(deltas), i+1, n))
+                    print('{}/{} {}/{} {}/{}'.format(deltas.index(delta)+1, len(deltas), boot_ns.index(boot_n)+1, len(boot_ns), i+1, n))
 
                     p = ana.calculate_pvalues(df, blabel, mlabel, boot_n)
                     names = p.index
                     p = p[names[0]][names[1]]
-                    row = [boot_n, delta, p]
+                    row = [boot_n, delta, p, self.corr_p(p, boot_n)]
                     self.sim2_results.append(row)
 
         # make into dataframe
-        self.df_sim2 = pd.DataFrame(self.sim2_results, columns=['n', 'delta', 'p'])
+        self.df_sim2 = pd.DataFrame(self.sim2_results, columns=['n', 'delta', 'p', 'corr_p'])
         self.df_sim2.to_csv('sim2.csv', index=False)
 
     def plot_sim2(self):
@@ -159,9 +169,9 @@ class Simulation():
         plt.savefig('sim2_scatter.svg', bbox_inches='tight')
 
 
-    def simulate3(self, boot_n=10**5, deltas=range(0,200), **kwargs):
+    def simulate3(self, boot_n=10**5, deltas=range(0,400), **kwargs):
         """
-        Simulates t test vs bootstrapped p values.
+        Simulates t test vs bootstrapped p values for normal distriubutions.
         """
         from scipy.stats import ttest_ind
 
@@ -172,7 +182,7 @@ class Simulation():
 
         for delta in deltas:
             print('{}/{}'.format(deltas.index(delta), len(deltas)))
-            df = self.make_diff_df(var=delta)
+            df = self.make_diff_df(mean=delta)
             p = ana.calculate_pvalues(df, blabel, mlabel, boot_n)
             names = p.index
             p = p[names[0]][names[1]]
@@ -184,10 +194,10 @@ class Simulation():
             t = ttest[0]
             p_t = ttest[1]
 
-            row = [delta, p, t, p_t]
+            row = [delta, p, self.corr_p(p, boot_n), t, p_t, p_t/2]
             self.sim3_results.append(row)
 
-        self.df_sim3 = pd.DataFrame(self.sim3_results, columns=['variance', 'p', 't', 'p_t'])
+        self.df_sim3 = pd.DataFrame(self.sim3_results, columns=['delta', 'p', 'corr_p', 't', 'p_t (two)', 'p_t (one)'])
         self.df_sim3.to_csv('sim3.csv', index=False)
 
     def plot_sim3(self):
@@ -199,6 +209,81 @@ class Simulation():
         plt.title('sim3_scatter')
 
         plt.savefig('sim3_scatter.svg', bbox_inches='tight')
+
+    def simulate4(self, boot_n=10**5, deltas=range(-200,50), **kwargs):
+        """
+        Simulates t test vs bootstrapped p values for one normal and one skewed distribution.
+        """
+        from scipy.stats import ttest_ind
+
+        blabel = kwargs.pop('blabel', 'name')
+        mlabel = kwargs.pop('mlabel', 'measurement')
+
+        self.sim4_results = []
+
+        for delta in deltas:
+            print('{}/{}'.format(deltas.index(delta), len(deltas)))
+            df = self.make_skew_df(loc=delta)
+            p = ana.calculate_pvalues(df, blabel, mlabel, boot_n)
+            names = p.index
+            p = p[names[0]][names[1]]
+
+            # t test
+            sample_1 = df[df[blabel] == names[0]]
+            sample_2 = df[df[blabel] == names[1]]
+            ttest = ttest_ind(sample_1[mlabel], sample_2[mlabel], equal_var=False)
+            t = ttest[0]
+            p_t = ttest[1]
+
+            row = [delta, p, self.corr_p(p, boot_n), t, p_t, p_t/2]
+            self.sim4_results.append(row)
+
+        self.df_sim4 = pd.DataFrame(self.sim4_results, columns=['delta', 'p', 'corr_p', 't', 'p_t (two)', 'p_t (one)'])
+        self.df_sim4.to_csv('sim4.csv', index=False)
+
+    def simulate5(self, boot_n=10**5, deltas=range(-200,50), **kwargs):
+        """
+        Simulates t test vs bootstrapped p values for one normal and one skewed distribution.
+        """
+        from scipy.stats import ttest_ind
+
+        blabel = kwargs.pop('blabel', 'name')
+        mlabel = kwargs.pop('mlabel', 'measurement')
+
+        self.sim5_results = []
+
+        for delta in deltas:
+            print('{}/{}'.format(deltas.index(delta), len(deltas)))
+            df = self.make_skew_df2(loc=delta)
+            p = ana.calculate_pvalues(df, blabel, mlabel, boot_n)
+            names = p.index
+            p = p[names[0]][names[1]]
+
+            # t test
+            sample_1 = df[df[blabel] == names[0]]
+            sample_2 = df[df[blabel] == names[1]]
+            ttest = ttest_ind(sample_1[mlabel], sample_2[mlabel], equal_var=False)
+            t = ttest[0]
+            p_t = ttest[1]
+
+            row = [delta, p, self.corr_p(p, boot_n), t, p_t, p_t/2]
+            self.sim5_results.append(row)
+
+        self.df_sim5 = pd.DataFrame(self.sim5_results, columns=['delta', 'p', 'corr_p', 't', 'p_t (two)', 'p_t (one)'])
+        self.df_sim5.to_csv('sim5.csv', index=False)
+
+
+    def randn_skew_fast(self, N, alpha=0.0, loc=0.0, scale=1.0):
+        """
+        Function to sample from skewed distriubution.
+        """
+        sigma = alpha / np.sqrt(1.0 + alpha**2)
+        u0 = np.random.randn(N)
+        v = np.random.randn(N)
+        u1 = (sigma*u0 + np.sqrt(1.0 - sigma**2)*v) * scale
+        u1[u0 < 0] *= -1
+        u1 = u1 + loc
+        return u1[0]
 
     def make_df(self, **kwargs):
         """
@@ -221,6 +306,49 @@ class Simulation():
 
         return self.convert_to_df(data, cols)
 
+    def make_skew_df2(self, **kwargs):
+        """
+        Makes a dataframe with two skewed samples.
+        """
+        cols = kwargs.pop('cols', ['name', 'measurement'])
+        names = kwargs.pop('names', ['wt', 'mt'])
+        count = kwargs.pop('count', 50)
+        loc = kwargs.pop('loc', -100)
+        alpha = kwargs.pop('alpha', 50)
+        scale = kwargs.pop('scale', 100)
+
+        dfs = []
+
+        df = self.make_df(cols=cols, name=names[0], count=count, dist=lambda: self.randn_skew_fast(1, alpha=-50, loc=80, scale=100))
+        dfs.append(df)
+
+        df = self.make_df(cols=cols, name=names[1], count=count, dist=lambda: self.randn_skew_fast(1, alpha=alpha, loc=loc, scale=scale))
+        dfs.append(df)
+
+        df = pd.concat(dfs)
+        return df
+
+    def make_skew_df(self, **kwargs):
+        """
+        Makes a dataframe with one normal distributed sample and one skewed sample.
+        """
+        cols = kwargs.pop('cols', ['name', 'measurement'])
+        names = kwargs.pop('names', ['wt', 'mt'])
+        count = kwargs.pop('count', 50)
+        loc = kwargs.pop('loc', -100)
+        alpha = kwargs.pop('alpha', 50)
+        scale = kwargs.pop('scale', 100)
+
+        dfs = []
+
+        df = self.make_df(cols=cols, name=names[0], count=count, dist=lambda: np.random.normal(0,100))
+        dfs.append(df)
+
+        df = self.make_df(cols=cols, name=names[1], count=count, dist=lambda: self.randn_skew_fast(1, alpha=alpha, loc=loc, scale=scale))
+        dfs.append(df)
+
+        df = pd.concat(dfs)
+        return df
 
     def make_diff_df(self, **kwargs):
         """
@@ -229,7 +357,7 @@ class Simulation():
         cols = kwargs.pop('cols', ['name', 'measurement'])
         names = kwargs.pop('names', ['wt', 'mt'])
         count = kwargs.pop('count', 50)
-        mean = kwargs.pop('mean', 50)
+        mean = kwargs.pop('mean', 100)
         var = kwargs.pop('var', 100)
 
         dfs = []
@@ -295,12 +423,13 @@ if __name__ == '__main__':
     os.chdir('./simulation_output')
 
     n = 50
-    boot_ns = [10, 10**2, 10**3, 10**4, 10**5]
+    boot_ns = [10**2, 10**3, 10**4, 10**5]
     sim = Simulation()
 
-    sim.simulate1_all(n=n, boot_ns=boot_ns)
-    sim.simulate2(n=10, boot_ns=boot_ns)
-    sim.simulate3()
+    # sim.simulate1_all(n=n, boot_ns=boot_ns)
+    # sim.simulate2(n=10, boot_ns=boot_ns)
+    # sim.simulate3(deltas=range(0,1000))
+    sim.simulate5()
 
     # sim.plot_sim1()
     # sim.plot_sim2()

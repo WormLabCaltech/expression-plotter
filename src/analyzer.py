@@ -156,6 +156,7 @@ def calculate_pvalues(df, blabel, mlabel, n, f=np.mean, **kwargs):
     #
 
     print('#Bootstrapping complete.\n')
+    p_vals.replace(0, 1/n, inplace=True)
 
     print('#P-value matrix:')
     print(p_vals)
@@ -425,7 +426,7 @@ def save_matrix(matrix, fname, **kwargs):
     col_1 = kwargs.pop('col_1', 'col_1')
     col_2 = kwargs.pop('col_2', 'col_2')
     val = kwargs.pop('val', 'val')
-    sig = kwargs.pop('sig', False)
+    # sig = kwargs.pop('sig', False)
 
     # replace values
     if not replace == None:
