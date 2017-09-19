@@ -93,6 +93,7 @@ def calculate_pvalues(df, blabel, tlabel, mlabel, n, f=np.mean, **kwargs):
     #     p_vals[gene_1][gene_2] = ana.calculate_pvalue(delta_obs, deltas_bootstrapped)
 
     print('#Bootstrapping complete.\n')
+    p_vals.replace(0, 1/n, inplace=True)
 
     print('#P-value matrix:')
     print(p_vals)
