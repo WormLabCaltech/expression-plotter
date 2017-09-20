@@ -29,8 +29,8 @@ class SimulationBinary():
         """
         cols = kwargs.pop('cols', ['col_1', 'col_2', 'col_3'])
         name = kwargs.pop('name', 'name')
-        count = kwargs.pop('count', 50)
-        total = kwargs.pop('total', 100)
+        count = kwargs.pop('count', 10)
+        total = kwargs.pop('total', 50)
         dist = kwargs.pop('dist', lambda: np.random.binomial(total, 0.5))
         vals = kwargs.pop('vals', None)
 
@@ -59,8 +59,8 @@ class SimulationBinary():
         """
         cols = kwargs.pop('cols', ['name', 'count', 'total'])
         names = kwargs.pop('names', ['wt', 'mt'])
-        count = kwargs.pop('count', 50)
-        total = kwargs.pop('total', 100)
+        count = kwargs.pop('count', 10)
+        total = kwargs.pop('total', 50)
         dist = kwargs.pop('dist', lambda: np.random.binomial(total, 0.5))
 
         vals = [dist() for i in range(count)]
@@ -79,8 +79,8 @@ class SimulationBinary():
         """
         cols = kwargs.pop('cols', ['name', 'count', 'total'])
         names = kwargs.pop('names', ['wt', 'mt'])
-        count = kwargs.pop('count', 50)
-        total = kwargs.pop('total', 100)
+        count = kwargs.pop('count', 10)
+        total = kwargs.pop('total', 50)
         dist = kwargs.pop('dist', lambda: np.random.binomial(total, 0.5))
 
         dfs = []
@@ -99,8 +99,8 @@ class SimulationBinary():
         """
         cols = kwargs.pop('cols', ['name', 'count', 'total'])
         names = kwargs.pop('names', ['wt', 'mt'])
-        count = kwargs.pop('count', 50)
-        total = kwargs.pop('total', 100)
+        count = kwargs.pop('count', 10)
+        total = kwargs.pop('total', 50)
         p = kwargs.pop('p', 0.7)
 
         dfs = []
@@ -188,17 +188,19 @@ class SimulationBinary():
         Simulates fisher exact vs bootstrapped p values.
         """
         # TODO: figure out how to test equality of proportions
-        from scipy.stats import ttest_ind
+        from scipy.stats import ttest_ind, fisher_exact, chi2_contingency
 
         blabel = kwargs.pop('blabel', 'name')
         mlabel = kwargs.pop('mlabel', 'count')
         tlabel = kwargs.pop('tlabel', 'total')
 
-        cols = ['dist', 'p', 't', 'p_t_2', 'p_t_1']
+        cols = ['dist', 'p', 't', 'p_t_2', 'p_t_1',
+                'oddsratio', 'p_f_2', 'p_f_1',
+                'chi2', 'p_chi', 'dof', 'ex']
         results = []
         for p in ps:
             df = self.make_diff_df(p=p)
-            df.to_csv('dfs/df_sim3_{}.csv'.format(p), index=False)
+            df.to_csv('dfs/df_sim3_fisher_{}.csv'.format(p), index=False)
             for i in range(n):
                 progress = '{}/{} {}/{}'.format(
                         np.where(ps == p)[0][0], len(ps),
@@ -221,7 +223,23 @@ class SimulationBinary():
                 t = ttest[0]
                 p_t = ttest[1]
 
-                results.append([p, p_val, t, p_t, p_t/2])
+                # fisher exact test
+                # make contingency table
+                passed_1 = sample_1[mlabel].sum()
+                failed_1 = sample_1[tlabel].sum() - passed_1
+                passed_2 = sample_2[mlabel].sum()
+                failed_2 = sample_2[tlabel].sum() - passed_2
+                row_1 = [passed_1, failed_1]
+                row_2 = [passed_2, failed_2]
+
+                oddsratio, p_f = fisher_exact([row_1, row_2])
+
+                # chi2 contingency
+                chi2, p_chi, dof, ex = chi2_contingency([row_1, row_2])
+
+                results.append([p, p_val, t, p_t, p_t/2,
+                                oddsratio, p_f, p_f/2,
+                                chi2, p_chi, dof, ex])
 
         df = self.convert_to_df(results, cols)
         df.to_csv('sim3.csv', index=False)
@@ -235,8 +253,8 @@ if __name__ == '__main__':
 
     sim = SimulationBinary()
     # sim.simulate1(n=n, boot_ns=boot_ns)
-    # sim.simulate2(n=n, boot_ns=boot_ns, ps=np.arange(0.4, 0.6, 0.01))
-    sim.simulate3(ps=np.arange(0.4, 0.6, 0.001))
+    sim.simulate2(n=5, boot_ns=boot_ns, ps=np.arange(0.4, 0.6, 0.01))
+    sim.simulate3(n=1, ps=np.arange(0.4, 0.6, 0.001))
 
 
 
