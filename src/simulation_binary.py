@@ -138,7 +138,7 @@ class SimulationBinary():
                 for i in range(n):
                     progress = '{}/{} {}/{} {}/{}'.format(
                             df_count, len(dfs),
-                            boot_ns.index(boot_n), len(boot_ns),
+                            boot_ns.index(boot_n)+1, len(boot_ns),
                             i+1, n
                     )
                     print('sim1: {}'.format(progress))
@@ -169,7 +169,7 @@ class SimulationBinary():
                 for i in range(n):
                     progress = '{}/{} {}/{} {}/{}'.format(
                             np.where(ps == p)[0][0], len(ps),
-                            boot_ns.index(boot_n), len(boot_ns),
+                            boot_ns.index(boot_n)+1, len(boot_ns),
                             i+1, n
                     )
                     print('sim2: {}'.format(progress))
@@ -234,9 +234,9 @@ if __name__ == '__main__':
     boot_ns = [10**2, 10**3, 10**4, 10**5]
 
     sim = SimulationBinary()
-    sim.simulate1(n=n, boot_ns=boot_ns)
-    sim.simulate2(n=n, boot_ns=boot_ns)
-    sim.simulate3()
+    # sim.simulate1(n=n, boot_ns=boot_ns)
+    # sim.simulate2(n=n, boot_ns=boot_ns, ps=np.arange(0.4, 0.6, 0.01))
+    sim.simulate3(ps=np.arange(0.4, 0.6, 0.001))
 
 
 
