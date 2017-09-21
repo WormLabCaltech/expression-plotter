@@ -126,7 +126,7 @@ class SimulationBinary():
         dfs = {
             'same': self.make_same_df(),
             'stat': self.make_stat_df(),
-            'diff': self.make_diff_df()
+            'diff': self.make_diff_df(p=0.6)
             }
         cols = ['type', 'n', 'p']
         results = []
@@ -196,7 +196,7 @@ class SimulationBinary():
 
         cols = ['dist', 'p', 't', 'p_t_2', 'p_t_1',
                 'oddsratio', 'p_f_2', 'p_f_1',
-                'chi2', 'p_chi', 'dof', 'ex']
+                'chi2', 'p_chi_2', 'p_chi_1', 'dof', 'ex']
         results = []
         for p in ps:
             df = self.make_diff_df(p=p)
@@ -239,7 +239,7 @@ class SimulationBinary():
 
                 results.append([p, p_val, t, p_t, p_t/2,
                                 oddsratio, p_f, p_f/2,
-                                chi2, p_chi, dof, ex])
+                                chi2, p_chi, p_chi/2, dof, ex])
 
         df = self.convert_to_df(results, cols)
         df.to_csv('sim3.csv', index=False)
@@ -252,9 +252,9 @@ if __name__ == '__main__':
     boot_ns = [10**2, 10**3, 10**4, 10**5]
 
     sim = SimulationBinary()
-    # sim.simulate1(n=n, boot_ns=boot_ns)
-    sim.simulate2(n=5, boot_ns=boot_ns, ps=np.arange(0.4, 0.6, 0.01))
-    sim.simulate3(n=1, ps=np.arange(0.4, 0.6, 0.001))
+    sim.simulate1(n=n, boot_ns=boot_ns)
+    # sim.simulate2(n=10, boot_ns=boot_ns, ps=np.arange(0.4, 0.5, 0.001))
+    # sim.simulate3(n=1, ps=np.arange(0.4, 0.5, 0.0001))
 
 
 

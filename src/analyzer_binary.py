@@ -43,7 +43,8 @@ def calculate_pvalues(df, blabel, tlabel, mlabel, n, f=np.mean, **kwargs):
     # threads = []
     # qu = queue.Queue()
 
-    cores = mp.cpu_count() # number of available cores
+    cores = 4 # core number set to 4 for debugging purposes
+    # cores = mp.cpu_count() # number of available cores
 
     # for loop to iterate through all pairwise comparisons (not permutation)
     # for loop to iterate through all pairwise comparisons (not permutation)
