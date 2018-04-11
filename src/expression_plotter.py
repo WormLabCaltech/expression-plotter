@@ -1,5 +1,8 @@
 """
+Author: Joseph Min (kmin@caltech.edu)
 
+This script is used to calculate the p and q values of a given dataset.
+DEPRECATED -- THIS SCRIPT DOES NOT MULTITHREAD
 """
 
 import pandas as pd
